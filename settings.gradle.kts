@@ -1,6 +1,12 @@
 pluginManagement {
     repositories {
-        google()
+        google {
+            content {
+                includeGroupByRegex("com\\.android.*")
+                includeGroupByRegex("com\\.google.*")
+                includeGroupByRegex("androidx.*")
+            }
+        }
         mavenCentral()
         gradlePluginPortal()
     }
@@ -12,5 +18,7 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "TesteCompose" // Ou o nome que você deu ao projeto novo
-include(":app")
+
+rootProject.name = "Monitor Rcp"
+include(":mobile")
+include(":wear")
