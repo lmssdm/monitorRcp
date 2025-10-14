@@ -11,8 +11,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
-// O 'listener' é um parâmetro para que o repositório possa enviar os dados do sensor
-// de volta para quem o está usando (nosso ViewModel).
 class SensorRepository(
     private val context: Context,
     private val coroutineScope: CoroutineScope,
@@ -27,9 +25,12 @@ class SensorRepository(
     private val gyroscope: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
 
     fun startCapture() {
-        sensorManager.registerListener(listener, accelerometer, SensorManager.SENSOR_DELAY_UI)
-        sensorManager.registerListener(listener, gyroscope, SensorManager.SENSOR_DELAY_UI)
-        Toast.makeText(context, "Captura iniciada!", Toast.LENGTH_SHORT).show()
+        // --- ALTERAÇÃO PRINCIPAL ---
+        // Trocamos a frequência de captura para a mais rápida possível.
+        val samplingPeriodUs = SensorManager.SENSOR_DELAY_FASTEST
+        sensorManager.registerListener(listener, accelerometer, samplingPeriodUs)
+        sensorManager.registerListener(listener, gyroscope, samplingPeriodUs)
+        Toast.makeText(context, "Captura iniciada (alta frequência)!", Toast.LENGTH_SHORT).show()
     }
 
     fun stopCapture() {

@@ -9,70 +9,99 @@ import android.os.Build
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.tcc.monitorrcp.data.DataRepository
 import com.tcc.monitorrcp.model.Screen
 import com.tcc.monitorrcp.model.SensorDataPoint
 import com.tcc.monitorrcp.model.TestResult
-import com.tcc.monitorrcp.data.DataRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import org.apache.commons.math3.analysis.interpolation.SplineInterpolator
+import org.apache.commons.math3.analysis.polynomials.PolynomialSplineFunction
 import kotlin.math.abs
 
-// Estado da UI: Uma única classe que representa tudo que a tela pode mostrar.
 data class UiState(
     val currentScreen: Screen = Screen.SplashScreen,
     val userName: String? = null,
     val lastDataString: String = "A aguardar dados do relógio...",
     val lastTestResult: TestResult? = null,
-    val history: List<TestResult> = emptyList()
+    val history: List<TestResult> = emptyList(),
+    val errorMessage: String? = null
 )
 
-// O ViewModel precisa do "contexto" do aplicativo para acessar SharedPreferences,
-// por isso usamos AndroidViewModel.
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(UiState())
-    val uiState = _uiState.asStateFlow() // A UI vai observar isso
+    val uiState = _uiState.asStateFlow()
 
     private val dataRepository = DataRepository
 
-    // O BroadcastReceiver agora vive aqui, dentro do ViewModel.
-    // Ele é mais seguro aqui porque está ligado ao ciclo de vida do ViewModel.
     private val dataReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             intent?.getStringExtra("data")?.let { csvData ->
                 _uiState.update { it.copy(lastDataString = csvData) }
                 processAndAnalyzeData(csvData)
-                // Navega para a tela de dados automaticamente
                 _uiState.update { it.copy(currentScreen = Screen.DataScreen) }
             }
         }
     }
 
     init {
-        // Ao iniciar o ViewModel, carregamos o histórico
-        viewModelScope.launch {
-            dataRepository.loadHistory(getApplication())
-            dataRepository.history.collect { historyList ->
+        // ✅ Inicializa o banco Room
+        dataRepository.initDatabase(getApplication())
+        Log.d("RCP_DEBUG_DB", "Banco Room inicializado")
+
+        // ✅ Observa mudanças no histórico em tempo real
+        viewModelScope.launch(Dispatchers.IO) {
+            dataRepository.getHistoryFlow().collectLatest { entities ->
+                val historyList = entities.map {
+                    TestResult(
+                        timestamp = it.timestamp,
+                        medianFrequency = it.medianFrequency,
+                        averageDepth = it.averageDepth,
+                        totalCompressions = it.totalCompressions,
+                        correctFrequencyCount = it.correctFrequencyCount,
+                        correctDepthCount = it.correctDepthCount
+                    )
+                }.sortedByDescending { it.timestamp }
+
                 _uiState.update { it.copy(history = historyList) }
+                Log.d("RCP_DEBUG_DB", "Histórico atualizado: ${historyList.size} registros")
             }
         }
 
-        // Registramos o BroadcastReceiver
+        // ✅ Registra o receiver para receber dados do smartwatch
         val filter = IntentFilter("com.tcc.monitorrcp.DATA_RECEIVED")
+        val app = getApplication<Application>()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            application.registerReceiver(dataReceiver, filter, Context.RECEIVER_EXPORTED)
+            app.registerReceiver(dataReceiver, filter, Context.RECEIVER_EXPORTED)
         } else {
-            application.registerReceiver(dataReceiver, filter)
+            app.registerReceiver(dataReceiver, filter)
         }
     }
 
-    // --- Funções de Eventos da UI ---
-    // A UI vai chamar essas funções quando o usuário interagir.
-
+    // --- Eventos de UI ---
     fun onLogin(name: String) {
-        _uiState.update { it.copy(userName = name, currentScreen = Screen.HomeScreen) }
+        // 🔒 Normaliza o nome e impede quebra de linha (ENTER)
+        val normalizedName = name
+            .replace("\n", "") // impede quebra de linha
+            .trim() // remove espaços no início e fim
+            .replace(Regex("\\s+"), " ") // reduz espaços duplos
+            .uppercase() // converte para caixa alta
+
+        if (normalizedName.isNotBlank()) {
+            _uiState.update {
+                it.copy(userName = normalizedName, currentScreen = Screen.HomeScreen)
+            }
+            Log.d("RCP_USER", "Nome do usuário: $normalizedName")
+        } else {
+            _uiState.update {
+                it.copy(errorMessage = "Por favor, insira um nome válido.")
+            }
+        }
     }
 
     fun onStartTestClick() {
@@ -95,125 +124,216 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // --- Lógica de Negócio (Movida da MainActivity) ---
+    fun dismissError() {
+        _uiState.update { it.copy(errorMessage = null) }
+    }
+
+    // --- Processamento e análise de dados ---
     private fun processAndAnalyzeData(csvData: String) {
         val dataPoints = parseData(csvData)
-        if (dataPoints.isEmpty()) return
+        if (dataPoints.size < 10) {
+            _uiState.update { it.copy(errorMessage = "Dados insuficientes para análise precisa.") }
+            return
+        }
 
         val accelerometerData = dataPoints.filter { it.type == "ACC" }
-        val accelerationMagnitudes = accelerometerData.map { it.magnitude() }
-        val smoothedMagnitudes = movingAverage(accelerationMagnitudes, 3)
-
-        val minPeakHeight = 10.5f
-        val minPeakDistance = 4
-        val allPeakIndices = findPeaks(smoothedMagnitudes, minPeakHeight, minPeakDistance)
-        val validPeakIndices = if (allPeakIndices.size > 2) {
-            allPeakIndices.subList(1, allPeakIndices.size - 1)
-        } else {
-            allPeakIndices
+        if (accelerometerData.isEmpty()) {
+            _uiState.update { it.copy(errorMessage = "Nenhum dado de acelerômetro encontrado.") }
+            return
         }
+
+        val durationSeconds =
+            (accelerometerData.last().timestamp - accelerometerData.first().timestamp) / 1000.0
+        if (durationSeconds <= 0) {
+            _uiState.update { it.copy(errorMessage = "Duração inválida nos dados do sensor.") }
+            return
+        }
+
+        val samplingRate = accelerometerData.size / durationSeconds
+        val magnitudes = accelerometerData.map { it.magnitude() }
+        val unbiasedMagnitudes = removeMeanDrift(magnitudes)
+        val filteredMagnitudes = highPassFilter(unbiasedMagnitudes, samplingRate, 0.5)
+
+        val minPeakProminence = 1.5f
+        val minPeakDistance = (samplingRate * 0.4).toInt()
+        val allPeakIndices =
+            findPeaksWithProminence(filteredMagnitudes, minPeakProminence, minPeakDistance)
+        val validPeakIndices =
+            if (allPeakIndices.size > 2) allPeakIndices.subList(1, allPeakIndices.size - 1)
+            else allPeakIndices
         val totalCompressions = validPeakIndices.size
 
-        val individualFrequencies = calculateIndividualFrequencies(accelerometerData, validPeakIndices)
+        val individualFrequencies =
+            calculateIndividualFrequencies(accelerometerData, validPeakIndices)
         val individualDepths = calculateIndividualDepths(accelerometerData, validPeakIndices)
         val correctFrequencyCount = individualFrequencies.count { it in 100.0..120.0 }
-        val correctDepthCount = individualDepths.count { it in 4.0..6.0 }
-        val medianFrequency = if (individualFrequencies.isNotEmpty()) individualFrequencies.median() else 0.0
-        val averageDepth = if (individualDepths.isNotEmpty()) individualDepths.average() else 0.0
+        val correctDepthCount = individualDepths.count { it in 5.0..6.0 }
+        val medianFrequency =
+            if (individualFrequencies.isNotEmpty()) individualFrequencies.median() else 0.0
+        val averageDepth =
+            if (individualDepths.isNotEmpty()) individualDepths.average() else 0.0
 
-        val newResult = TestResult(System.currentTimeMillis(), medianFrequency, averageDepth, totalCompressions, correctFrequencyCount, correctDepthCount)
+        val newResult = TestResult(
+            System.currentTimeMillis(),
+            medianFrequency,
+            averageDepth,
+            totalCompressions,
+            correctFrequencyCount,
+            correctDepthCount
+        )
 
-        // Atualiza o estado da UI com o novo resultado
         _uiState.update { it.copy(lastTestResult = newResult) }
 
-        // Salva no histórico usando o Repository
-        dataRepository.saveNewResultToHistory(getApplication(), newResult)
-
-        Log.d("RCP_ANALYSIS", "Resultado: ${newResult.totalCompressions} compressões (Freq Mediana: $medianFrequency, Prof Média: $averageDepth)")
-    }
-
-    // --- Funções Auxiliares (Movidas da MainActivity) ---
-    private fun parseData(csvData: String): List<SensorDataPoint> {
-        return csvData.split("\n").drop(1).mapNotNull { line ->
-            try {
-                val parts = line.split(",")
-                if (parts.size == 5) {
-                    SensorDataPoint(parts[0].toLong(), parts[1], parts[2].toFloat(), parts[3].toFloat(), parts[4].toFloat())
-                } else { null }
-            } catch (e: Exception) { null }
+        // ✅ Salva no banco local (Room)
+        viewModelScope.launch(Dispatchers.IO) {
+            dataRepository.newResultReceived(newResult, getApplication())
+            Log.d("RCP_DEBUG_DB", "Novo resultado salvo no banco: ${newResult.timestamp}")
         }
+
+        Log.d(
+            "RCP_ANALYSIS",
+            "Compressões: $totalCompressions | Freq: $medianFrequency | Prof: $averageDepth"
+        )
     }
 
-    private fun movingAverage(data: List<Float>, windowSize: Int): List<Float> {
-        if (windowSize <= 1) return data
-        val result = mutableListOf<Float>()
-        for (i in data.indices) {
-            val window = data.subList(maxOf(0, i - windowSize + 1), i + 1)
-            result.add(window.average().toFloat())
+    // --- Funções auxiliares ---
+    private fun removeMeanDrift(data: List<Float>): List<Float> {
+        if (data.isEmpty()) return emptyList()
+        val mean = data.average().toFloat()
+        return data.map { it - mean }
+    }
+
+    private fun highPassFilter(
+        data: List<Float>,
+        samplingRate: Double,
+        cutoffFrequency: Double
+    ): List<Float> {
+        if (data.isEmpty()) return emptyList()
+        val rc = 1.0 / (2.0 * Math.PI * cutoffFrequency)
+        val dt = 1.0 / samplingRate
+        val alpha = rc / (rc + dt)
+        val filtered = mutableListOf<Float>()
+        filtered.add(data[0])
+        for (i in 1 until data.size) {
+            val value = alpha * (filtered[i - 1] + data[i] - data[i - 1])
+            filtered.add(value.toFloat())
+        }
+        return filtered
+    }
+
+    private fun interpolateSignal(dataPoints: List<SensorDataPoint>): List<Float> {
+        if (dataPoints.size < 5) return dataPoints.map { it.magnitude() }
+        val interpolator = SplineInterpolator()
+        val timestamps = dataPoints.map { it.timestamp.toDouble() }.toDoubleArray()
+        val magnitudes = dataPoints.map { it.magnitude().toDouble() }.toDoubleArray()
+        val spline: PolynomialSplineFunction = interpolator.interpolate(timestamps, magnitudes)
+        return dataPoints.map { spline.value(it.timestamp.toDouble()).toFloat() }
+    }
+
+    private fun findPeaksWithProminence(
+        data: List<Float>,
+        minProminence: Float,
+        minDistance: Int
+    ): List<Int> {
+        if (data.isEmpty()) return emptyList()
+        val allPeaks =
+            (1 until data.size - 1).filter { data[it] > data[it - 1] && data[it] > data[it + 1] }
+        if (allPeaks.isEmpty()) return emptyList()
+        val prominences = allPeaks.map { peak ->
+            val value = data[peak]
+            var leftMin = value
+            for (i in peak - 1 downTo 0) {
+                if (data[i] < leftMin) leftMin = data[i]
+                if (data[i] > value) break
+            }
+            var rightMin = value
+            for (i in peak + 1 until data.size) {
+                if (data[i] < rightMin) rightMin = data[i]
+                if (data[i] > value) break
+            }
+            value - maxOf(leftMin, rightMin)
+        }
+        val filteredPeaks = allPeaks.zip(prominences)
+            .filter { (_, prominence) -> prominence >= minProminence }
+            .map { (idx, _) -> idx }
+
+        val result = mutableListOf<Int>()
+        var last = -minDistance
+        for (idx in filteredPeaks) {
+            if (idx - last >= minDistance) {
+                result.add(idx)
+                last = idx
+            }
         }
         return result
     }
 
-    private fun findPeaks(data: List<Float>, minHeight: Float, minDistance: Int): List<Int> {
-        val peaks = mutableListOf<Int>()
-        var i = 1
-        while (i < data.size - 1) {
-            if (data[i] > data[i - 1] && data[i] > data[i + 1] && data[i] >= minHeight) {
-                if (peaks.isEmpty() || i - peaks.last() >= minDistance) {
-                    peaks.add(i)
-                }
+    private fun parseData(csvData: String): List<SensorDataPoint> =
+        csvData.split("\n").drop(1).mapNotNull { line ->
+            try {
+                val parts = line.split(",")
+                if (parts.size == 5)
+                    SensorDataPoint(
+                        parts[0].toLong(),
+                        parts[1],
+                        parts[2].toFloat(),
+                        parts[3].toFloat(),
+                        parts[4].toFloat()
+                    )
+                else null
+            } catch (e: Exception) {
+                Log.e("PARSE_DATA", "Linha inválida: $line")
+                null
             }
-            i++
         }
-        return peaks
-    }
 
-    private fun calculateIndividualFrequencies(accelerometerData: List<SensorDataPoint>, peakIndices: List<Int>): List<Double> {
-        if (peakIndices.size < 2) return emptyList()
-        return (0 until peakIndices.size - 1).map { i ->
-            val startTime = accelerometerData[peakIndices[i]].timestamp
-            val endTime = accelerometerData[peakIndices[i+1]].timestamp
-            val duration = (endTime - startTime) / 1000.0
+    private fun calculateIndividualFrequencies(
+        data: List<SensorDataPoint>,
+        peaks: List<Int>
+    ): List<Double> {
+        if (peaks.size < 2) return emptyList()
+        return (0 until peaks.size - 1).map {
+            val start = data[peaks[it]].timestamp
+            val end = data[peaks[it + 1]].timestamp
+            val duration = (end - start) / 1000.0
             if (duration > 0) 60.0 / duration else 0.0
         }
     }
 
-    private fun calculateIndividualDepths(accelerometerData: List<SensorDataPoint>, peakIndices: List<Int>): List<Double> {
-        if (peakIndices.size < 2) return emptyList()
+    private fun calculateIndividualDepths(
+        data: List<SensorDataPoint>,
+        peaks: List<Int>
+    ): List<Double> {
+        if (peaks.size < 2) return emptyList()
         val alpha = 0.8f
         var gravityZ = 0f
-        val linearAccelerationZ = accelerometerData.map {
+        val linearZ = data.map {
             gravityZ = alpha * gravityZ + (1 - alpha) * it.z
             it.z - gravityZ
         }
-        return (0 until peakIndices.size - 1).map { i ->
-            val cycleAcceleration = linearAccelerationZ.slice(peakIndices[i]..peakIndices[i+1])
-            val cycleTimestamps = accelerometerData.slice(peakIndices[i]..peakIndices[i+1]).map { it.timestamp }
+        return (0 until peaks.size - 1).map { i ->
+            val accel = linearZ.slice(peaks[i]..peaks[i + 1])
+            val times = data.slice(peaks[i]..peaks[i + 1]).map { it.timestamp }
             var velocity = 0.0
             var depth = 0.0
             var maxDepth = 0.0
-            for (j in 0 until cycleAcceleration.size - 1) {
-                val dt = (cycleTimestamps[j+1] - cycleTimestamps[j]) / 1000.0
-                velocity += cycleAcceleration[j] * dt
+            for (j in 0 until accel.size - 1) {
+                val dt = (times[j + 1] - times[j]) / 1000.0
+                velocity += accel[j] * dt
                 depth += velocity * dt
                 if (abs(depth) > maxDepth) maxDepth = abs(depth)
             }
             maxDepth * 100
-        }.filter { it > 1.0 && it < 10.0 }
+        }.filter { it in 1.0..10.0 }
     }
 
     private fun List<Double>.median(): Double {
-        if (this.isEmpty()) return 0.0
-        val sorted = this.sorted()
+        if (isEmpty()) return 0.0
+        val sorted = sorted()
         val mid = sorted.size / 2
-        return if (sorted.size % 2 == 0) {
-            (sorted[mid - 1] + sorted[mid]) / 2.0
-        } else {
-            sorted[mid]
-        }
+        return if (sorted.size % 2 == 0) (sorted[mid - 1] + sorted[mid]) / 2.0 else sorted[mid]
     }
 
-    // É importante limpar o receiver quando o ViewModel for destruído.
     override fun onCleared() {
         super.onCleared()
         getApplication<Application>().unregisterReceiver(dataReceiver)
