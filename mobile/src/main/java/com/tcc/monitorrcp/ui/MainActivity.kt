@@ -88,8 +88,8 @@ fun AppNavigator(
             onBack = onBack
         )
 
-        // ✅ Tela de histórico simplificada (dados reais do banco)
-        Screen.HistoryScreen -> HistoryScreenSimple(
+        // ✅ Tela de histórico COM GRÁFICOS (do Screens.kt)
+        Screen.HistoryScreen -> HistoryScreen(
             history = uiState.history,
             onBack = onBack
         )
@@ -98,75 +98,75 @@ fun AppNavigator(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun HistoryScreenSimple(
-    history: List<TestResult>,
-    onBack: () -> Unit
-) {
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Histórico de Testes") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Voltar"
-                        )
-                    }
-                }
-            )
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp)
-        ) {
-            if (history.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("Nenhum teste registrado ainda.")
-                }
-            } else {
-                Text(
-                    text = "Resultados (${history.size})",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(history) { result ->
-                        HistoryItem(result)
-                        Divider()
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun HistoryItem(result: TestResult) {
-    val date = remember(result.timestamp) {
-        java.text.SimpleDateFormat("dd/MM/yyyy HH:mm", java.util.Locale.getDefault())
-            .format(java.util.Date(result.timestamp))
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp)
-    ) {
-        Text("Data: $date", fontWeight = FontWeight.Bold)
-        Text("Frequência Mediana: %.1f cpm".format(result.medianFrequency))
-        Text("Profundidade Média: %.1f cm".format(result.averageDepth))
-        Text("Total de Compressões: ${result.totalCompressions}")
-        Text("Freq. Correta: ${result.correctFrequencyCount}")
-        Text("Prof. Correta: ${result.correctDepthCount}")
-    }
-}
+//@OptIn(ExperimentalMaterial3Api::class)
+//@Composable
+//fun HistoryScreenSimple(
+//    history: List<TestResult>,
+//    onBack: () -> Unit
+//) {
+//    Scaffold(
+//        topBar = {
+//            TopAppBar(
+//                title = { Text("Histórico de Testes") },
+//                navigationIcon = {
+//                    IconButton(onClick = onBack) {
+//                        Icon(
+//                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+//                            contentDescription = "Voltar"
+//                        )
+//                    }
+//                }
+//            )
+//        }
+//    ) { padding ->
+//        Column(
+//            modifier = Modifier
+//                .fillMaxSize()
+//                .padding(padding)
+//                .padding(16.dp)
+//        ) {
+//            if (history.isEmpty()) {
+//                Box(
+//                    modifier = Modifier.fillMaxSize(),
+//                    contentAlignment = Alignment.Center
+//                ) {
+//                    Text("Nenhum teste registrado ainda.")
+//                }
+//            } else {
+//                Text(
+//                    text = "Resultados (${history.size})",
+//                    style = MaterialTheme.typography.titleMedium,
+//                    modifier = Modifier.padding(bottom = 8.dp)
+//                )
+//
+//                LazyColumn(modifier = Modifier.fillMaxSize()) {
+//                    items(history) { result ->
+//                        HistoryItem(result)
+//                        Divider()
+//                    }
+//                }
+//            }
+//        }
+//    }
+//}
+//
+//@Composable
+//fun HistoryItem(result: TestResult) {
+//    val date = remember(result.timestamp) {
+//        java.text.SimpleDateFormat("dd/MM/yyyy HH:mm", java.util.Locale.getDefault())
+//            .format(java.util.Date(result.timestamp))
+//    }
+//
+//    Column(
+//        modifier = Modifier
+//            .fillMaxWidth()
+//            .padding(vertical = 8.dp)
+//    ) {
+//        Text("Data: $date", fontWeight = FontWeight.Bold)
+//        Text("Frequência Mediana: %.1f cpm".format(result.medianFrequency))
+//        Text("Profundidade Média: %.1f cm".format(result.averageDepth))
+//        Text("Total de Compressões: ${result.totalCompressions}")
+//        Text("Freq. Correta: ${result.correctFrequencyCount}")
+//        Text("Prof. Correta: ${result.correctDepthCount}")
+//    }
+//}

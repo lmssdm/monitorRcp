@@ -1,6 +1,6 @@
 package com.tcc.monitorrcp.ui
 
-import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Canvas // <-- Import Canvas de volta
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -17,7 +17,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Offset // <-- Import Offset de volta
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
@@ -28,6 +28,9 @@ import androidx.compose.ui.unit.sp
 import com.tcc.monitorrcp.R
 import com.tcc.monitorrcp.model.TestResult
 import kotlinx.coroutines.delay
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 // 🏠 HomeScreen
 @Composable
@@ -266,7 +269,11 @@ fun HistoryScreen(history: List<TestResult>, onBack: () -> Unit) {
         }
     ) { padding ->
         Column(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState()) // Permite rolar
+                .padding(16.dp)
         ) {
             if (history.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -276,51 +283,89 @@ fun HistoryScreen(history: List<TestResult>, onBack: () -> Unit) {
                 Text("Resultados Anteriores", style = MaterialTheme.typography.headlineSmall)
                 Spacer(modifier = Modifier.height(16.dp))
 
-                LineChart(
-                    data = history.map { it.medianFrequency },
-                    label = "Evolução da Frequência (cpm)",
-                    color = Color(0xFF1565C0)
-                )
+                // Card para o primeiro gráfico
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                ) {
+                    // *** Chama o LineChart original (com Canvas) ***
+                    LineChart(
+                        data = history.map { it.medianFrequency },
+                        label = "Evolução da Frequência (cpm)",
+                        color = Color(0xFF1565C0)
+                    )
+                }
+
                 Spacer(modifier = Modifier.height(24.dp))
-                LineChart(
-                    data = history.map { it.averageDepth },
-                    label = "Evolução da Profundidade (cm)",
-                    color = Color(0xFF2E7D32)
-                )
+
+                // Card para o segundo gráfico
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                ) {
+                    // *** Chama o LineChart original (com Canvas) ***
+                    LineChart(
+                        data = history.map { it.averageDepth },
+                        label = "Evolução da Profundidade (cm)",
+                        color = Color(0xFF2E7D32)
+                    )
+                }
+
+                // Lista detalhada dos testes
+                Spacer(modifier = Modifier.height(24.dp))
+                Text("Lista Detalhada", style = MaterialTheme.typography.headlineSmall)
+                Spacer(modifier = Modifier.height(8.dp))
+
+                history.forEach { result ->
+                    HistoryItem(result)
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                }
             }
         }
     }
 }
 
+// *** GRÁFICO ORIGINAL COM CANVAS ***
 @Composable
 fun LineChart(data: List<Double>, label: String, color: Color) {
     val dataPoints = data.takeLast(10)
-    Column(modifier = Modifier.fillMaxWidth()) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp) // Adiciona padding interno
+    ) {
         Text(label, style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(8.dp))
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(100.dp)
-                .background(Color.LightGray.copy(alpha = 0.1f))
+            // Background removido para usar o fundo do Card
         ) {
             if (dataPoints.size > 1) {
-                val stepX = size.width / (dataPoints.size - 1)
-                val minY = dataPoints.minOrNull()?.toFloat() ?: 0f
-                val maxY = dataPoints.maxOrNull()?.toFloat() ?: 1f
-                val rangeY = if (maxY - minY == 0f) 1f else maxY - minY
+                // Inverte os dados para desenhar do mais antigo (esquerda) para o mais novo (direita)
+                val reversedDataPoints = dataPoints.reversed()
+                val stepX = size.width / (reversedDataPoints.size - 1)
+                val minY = reversedDataPoints.minOrNull()?.toFloat() ?: 0f
+                val maxY = reversedDataPoints.maxOrNull()?.toFloat() ?: 1f
+                // Adiciona um pequeno buffer se todos os valores forem iguais para evitar divisão por zero
+                val rangeY = (maxY - minY).takeIf { it > 0f } ?: 1f
 
-                for (i in 0 until dataPoints.size - 1) {
+                for (i in 0 until reversedDataPoints.size - 1) {
                     val startX = i * stepX
-                    val startY = size.height * (1 - ((dataPoints[i].toFloat() - minY) / rangeY))
+                    // Normaliza o valor Y para o espaço do Canvas (0 no topo, size.height em baixo)
+                    val startY = size.height * (1 - ((reversedDataPoints[i].toFloat() - minY) / rangeY))
                     val endX = (i + 1) * stepX
-                    val endY = size.height * (1 - ((dataPoints[i + 1].toFloat() - minY) / rangeY))
+                    val endY = size.height * (1 - ((reversedDataPoints[i + 1].toFloat() - minY) / rangeY))
                     drawLine(color = color, start = Offset(startX, startY), end = Offset(endX, endY), strokeWidth = 5f)
                 }
             }
         }
     }
 }
+
 
 // 📈 DataScreen
 @OptIn(ExperimentalMaterial3Api::class)
@@ -329,7 +374,7 @@ fun DataScreen(result: TestResult?, data: String, onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Resultados Detalhados") },
+                title = { Text("Resultados Detalhado") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Voltar")
@@ -397,5 +442,24 @@ fun ResultMetric(label: String, value: String, unit: String) {
         Text(label, fontSize = 16.sp, color = Color.Gray)
         Text(value, fontSize = 40.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
         Text(unit, fontSize = 14.sp)
+    }
+}
+
+@Composable
+fun HistoryItem(result: TestResult) {
+    val date = remember(result.timestamp) {
+        SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
+            .format(Date(result.timestamp))
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+    ) {
+        Text("Data: $date", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+        Text("Frequência Mediana: %.1f cpm".format(result.medianFrequency), fontSize = 14.sp)
+        Text("Profundidade Média: %.1f cm".format(result.averageDepth), fontSize = 14.sp)
+        Text("Total de Compressões: ${result.totalCompressions}", fontSize = 14.sp)
     }
 }
