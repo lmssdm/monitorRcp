@@ -84,7 +84,7 @@ fun AppNavigator(
         )
         Screen.DataScreen -> DataScreen(
             result = uiState.lastTestResult,
-            data = uiState.lastDataString,
+            data = uiState.lastReceivedData,
             onBack = onBack
         )
 
