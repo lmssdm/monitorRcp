@@ -18,11 +18,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
-import kotlin.math.abs
+import kotlin.math.sqrt
 
-// ------------------------------------------------------------
-// Estado da UI do relógio
-// ------------------------------------------------------------
 data class WearUiState(
     val isCapturing: Boolean = false,
     val elapsedTimeInMillis: Long = 0L,
@@ -36,9 +33,6 @@ data class WearUiState(
         }
 }
 
-// ------------------------------------------------------------
-// ViewModel do relógio (Wear OS)
-// ------------------------------------------------------------
 class WearViewModel(application: Application) : AndroidViewModel(application), SensorEventListener {
 
     private val _uiState = MutableStateFlow(WearUiState())
@@ -46,30 +40,44 @@ class WearViewModel(application: Application) : AndroidViewModel(application), S
 
     private val repository = SensorRepository(application, viewModelScope, this)
 
-    // Intervalo de envio em milissegundos (10 segundos)
     private val SEND_INTERVAL = 10000L
-
-    // Lista para acumular dados
     private var capturedData = mutableListOf("Timestamp,Type,X,Y,Z")
     private var timerJob: Job? = null
     private var chunkSendJob: Job? = null
 
-    // ------------------------------------------------------------
-    // Variáveis para feedback em tempo real
-    // ------------------------------------------------------------
     private var lastPeakTime: Long? = null
-    private var gravityZ = 0f
-    private val alpha = 0.8f // fator de suavização do filtro
+    // Inicializa com 9.8 (gravidade média da Terra), será ajustado pelo filtro
+    private var gravityMagnitude = 9.8f
+    private val alpha = 0.8f
     private val vibrator = application.getSystemService(Vibrator::class.java)
 
-    // ------------------------------------------------------------
-    // Início da captura
-    // ------------------------------------------------------------
+    // === CONTROLE DE PRECISÃO ===
+    private var isFirstReading = true
+    private var lastValidCompressionTime = 0L
+    private var waitingForRecoil = false
+
+    // [IMPORTANTE] Limiar de Magnitude para detectar IMPACTO (fundo da compressão)
+    // Quando você empurra e bate embaixo, a magnitude sobe muito acima de 9.8G.
+    // 3.0f significa que estamos procurando um pico de força de ~3m/s² acima da gravidade.
+    private val IMPACT_THRESHOLD = 3.0f
+
+    // Limiar para considerar que a mão subiu (alivio de pressão, magnitude cai ou volta ao normal)
+    private val RECOIL_THRESHOLD = 0.5f
+
+    // 300ms de intervalo mínimo = máx 200 CPM. Evita contagem dupla.
+    private val MIN_COMPRESSION_INTERVAL = 300L
+
     fun startCapture() {
         timerJob?.cancel()
         chunkSendJob?.cancel()
         capturedData.clear()
         capturedData.add("Timestamp,Type,X,Y,Z")
+
+        lastPeakTime = null
+        lastValidCompressionTime = 0L
+        isFirstReading = true
+        waitingForRecoil = false
+        gravityMagnitude = 9.8f
 
         _uiState.update { it.copy(isCapturing = true, elapsedTimeInMillis = 0L, feedbackText = "Iniciando captura...") }
         repository.startCapture()
@@ -83,7 +91,6 @@ class WearViewModel(application: Application) : AndroidViewModel(application), S
             }
         }
 
-        // Envio periódico em chunks
         chunkSendJob = viewModelScope.launch {
             while (isActive) {
                 delay(SEND_INTERVAL)
@@ -98,9 +105,6 @@ class WearViewModel(application: Application) : AndroidViewModel(application), S
         }
     }
 
-    // ------------------------------------------------------------
-    // Parar e enviar o último bloco
-    // ------------------------------------------------------------
     fun stopAndSendData() {
         timerJob?.cancel()
         chunkSendJob?.cancel()
@@ -108,67 +112,88 @@ class WearViewModel(application: Application) : AndroidViewModel(application), S
 
         if (capturedData.size > 1) {
             val finalData = ArrayList(capturedData)
-            Log.d("WearViewModel", "Enviando dados finais com ${finalData.size - 1} pontos.")
             repository.sendEndOfTestData(finalData)
         } else {
-            Log.d("WearViewModel", "Enviando mensagem final vazia.")
             repository.sendEndOfTestData(listOf("Timestamp,Type,X,Y,Z"))
         }
-
         _uiState.value = WearUiState()
         resetFeedback()
     }
 
-    // ------------------------------------------------------------
-    // Processa eventos de sensor em tempo real
-    // ------------------------------------------------------------
     override fun onSensorChanged(event: SensorEvent?) {
         if (_uiState.value.isCapturing && event != null && event.sensor.type == Sensor.TYPE_ACCELEROMETER) {
+            val x = event.values[0]
+            val y = event.values[1]
+            val z = event.values[2]
             val timestamp = System.currentTimeMillis()
-            val values = event.values
-            capturedData.add("$timestamp,ACC,${values[0]},${values[1]},${values[2]}")
 
-            // Avalia compressão atual
-            val feedback = analyzeCompression(values[2])
+            // Salva os dados brutos para o celular fazer a análise completa depois
+            capturedData.add("$timestamp,ACC,$x,$y,$z")
+
+            // Calcula a Magnitude Total (independente da orientação do relógio)
+            val currentMagnitude = sqrt(x*x + y*y + z*z)
+
+            if (isFirstReading) {
+                gravityMagnitude = currentMagnitude
+                isFirstReading = false
+            }
+
+            // Analisa usando a magnitude em vez de apenas o eixo Z
+            val feedback = analyzeCompressionMagnitude(currentMagnitude)
             if (feedback != null) {
                 _uiState.update { it.copy(feedbackText = feedback) }
             }
         }
     }
 
-    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
-        // Não necessário para este caso
-    }
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
     // ------------------------------------------------------------
-    // Análise simples em tempo real das compressões
+    // NOVA ANÁLISE USANDO MAGNITUDE (FUSÃO DE EIXOS)
     // ------------------------------------------------------------
-    private fun analyzeCompression(z: Float): String? {
-        // Filtro passa-alta simples
-        gravityZ = alpha * gravityZ + (1 - alpha) * z
-        val linearZ = z - gravityZ
+    private fun analyzeCompressionMagnitude(currentMag: Float): String? {
+        val now = System.currentTimeMillis()
 
-        // Detecta movimento de compressão (aceleração descendente)
-        if (linearZ < -2.0f) {
-            val now = System.currentTimeMillis()
-            val last = lastPeakTime
-            lastPeakTime = now
+        // 1. Filtro Passa-Alta na Magnitude
+        // gravityMagnitude aprende qual é a força constante (aprox 9.8)
+        gravityMagnitude = alpha * gravityMagnitude + (1 - alpha) * currentMag
+        // linearMagnitude é só a variação brusca (o movimento da RCP)
+        val linearMagnitude = currentMag - gravityMagnitude
 
-            if (last != null) {
-                val interval = now - last
-                val frequency = 60_000.0 / interval // compressões por minuto
-                val depthEstimate = abs(linearZ) * 0.5 // estimativa simples de profundidade (cm)
+        if (!waitingForRecoil) {
+            // ESTADO 1: Procurando IMPACTO (pico positivo de magnitude)
+            // Durante a compressão, a desaceleração brusca no peito gera um pico de força > 9.8g
+            if (linearMagnitude > IMPACT_THRESHOLD && (now - lastValidCompressionTime > MIN_COMPRESSION_INTERVAL)) {
+                waitingForRecoil = true
+                lastValidCompressionTime = now
 
-                return when {
-                    frequency < 100 -> "⚠️ Muito lento (${frequency.toInt()} cpm)"
-                    frequency > 120 -> "⚠️ Muito rápido (${frequency.toInt()} cpm)"
-                    depthEstimate < 5 -> "⚠️ Muito raso (~${"%.1f".format(depthEstimate)} cm)"
-                    depthEstimate > 6 -> "⚠️ Muito fundo (~${"%.1f".format(depthEstimate)} cm)"
-                    else -> {
-                        vibrateShort()
-                        "✅ Compressão correta!"
+                // Feedback de Frequência
+                val last = lastPeakTime
+                lastPeakTime = now
+                if (last != null) {
+                    val interval = now - last
+                    if (interval > 0) {
+                        val frequency = 60_000.0 / interval
+                        return when {
+                            frequency < 100 -> "⚠️ Muito lento (${frequency.toInt()} cpm)"
+                            frequency > 120 -> "⚠️ Muito rápido (${frequency.toInt()} cpm)"
+                            else -> {
+                                vibrateShort()
+                                "✅ Ritmo OK (${frequency.toInt()} cpm)"
+                            }
+                        }
                     }
                 }
+            }
+        } else {
+            // ESTADO 2: Aguardando RETORNO (alivio da força)
+            // Esperamos a magnitude cair de volta para perto do normal (ou abaixo dele durante a subida)
+            if (linearMagnitude < RECOIL_THRESHOLD) {
+                waitingForRecoil = false
+            }
+            // Timeout de segurança (se travar por 1.5s, reseta)
+            if (now - lastValidCompressionTime > 1500) {
+                waitingForRecoil = false
             }
         }
         return null
@@ -176,24 +201,18 @@ class WearViewModel(application: Application) : AndroidViewModel(application), S
 
     private fun vibrateShort() {
         try {
-            vibrator?.vibrate(VibrationEffect.createOneShot(80, VibrationEffect.DEFAULT_AMPLITUDE))
-        } catch (e: Exception) {
-            Log.e("WearViewModel", "Erro ao vibrar: ${e.message}")
-        }
+            vibrator.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE))
+        } catch (e: Exception) { }
     }
 
     private fun resetFeedback() {
         _uiState.update { it.copy(feedbackText = "Aguardando compressões...") }
     }
 
-    // ------------------------------------------------------------
-    // Finalização
-    // ------------------------------------------------------------
     override fun onCleared() {
         super.onCleared()
         timerJob?.cancel()
         chunkSendJob?.cancel()
         repository.stopCapture()
-        resetFeedback()
     }
 }

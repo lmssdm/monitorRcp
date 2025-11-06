@@ -39,10 +39,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState = _uiState.asStateFlow()
-
     private val dataRepository = DataRepository
 
-    // === Receivers ===
+    // === Receivers de Broadcast ===
     private val dataChunkReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             intent?.getStringExtra(ListenerService.EXTRA_DATA)?.let { chunkData ->
@@ -57,6 +56,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             intent?.getStringExtra(ListenerService.EXTRA_DATA)?.let { finalData ->
                 _uiState.update { it.copy(lastReceivedData = finalData) }
                 processAndSaveFinalData(finalData)
+                // Força a navegação para a tela de dados se ainda não estiver nela
                 if (_uiState.value.currentScreen != Screen.DataScreen) {
                     _uiState.update { it.copy(currentScreen = Screen.DataScreen) }
                 }
@@ -65,30 +65,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     init {
+        // Inicializa banco de dados
         dataRepository.initDatabase(getApplication())
-        Log.d("RCP_DEBUG_DB", "Banco Room inicializado")
 
+        // Coleta histórico em segundo plano
         viewModelScope.launch(Dispatchers.IO) {
             dataRepository.getHistoryFlow().collectLatest { entities ->
                 val historyList = entities.map {
                     TestResult(
-                        timestamp = it.timestamp,
-                        medianFrequency = it.medianFrequency,
-                        averageDepth = it.averageDepth,
-                        totalCompressions = it.totalCompressions,
-                        correctFrequencyCount = it.correctFrequencyCount,
-                        correctDepthCount = it.correctDepthCount
+                        it.timestamp, it.medianFrequency, it.averageDepth,
+                        it.totalCompressions, it.correctFrequencyCount, it.correctDepthCount
                     )
                 }.sortedByDescending { it.timestamp }
-
                 _uiState.update { it.copy(history = historyList) }
             }
         }
 
+        // Registra receivers para comunicação com o serviço do Wear
         val app = getApplication<Application>()
         val chunkFilter = IntentFilter(ListenerService.ACTION_DATA_CHUNK_RECEIVED)
         val finalFilter = IntentFilter(ListenerService.ACTION_FINAL_DATA_RECEIVED)
-
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             app.registerReceiver(dataChunkReceiver, chunkFilter, Context.RECEIVER_NOT_EXPORTED)
             app.registerReceiver(finalDataReceiver, finalFilter, Context.RECEIVER_NOT_EXPORTED)
@@ -98,13 +94,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // === UI Events ===
+    // === Eventos de UI ===
     fun onLogin(name: String) {
-        val normalizedName = name.replace("\n", "").trim().replace(Regex("\\s+"), " ").uppercase()
-        if (normalizedName.isNotBlank()) {
+        val normalizedName = name.trim().replace(Regex("\\s+"), " ").uppercase()
+        if (normalizedName.length >= 3) {
             _uiState.update { it.copy(userName = normalizedName, currentScreen = Screen.HomeScreen) }
         } else {
-            _uiState.update { it.copy(errorMessage = "Por favor, insira um nome válido.") }
+            _uiState.update { it.copy(errorMessage = "Nome inválido (mínimo 3 letras).") }
         }
     }
 
@@ -119,165 +115,154 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun onNavigateTo(screen: Screen) {
-        _uiState.update { it.copy(currentScreen = screen) }
-    }
-
+    fun onNavigateTo(screen: Screen) { _uiState.update { it.copy(currentScreen = screen) } }
     fun onSplashScreenTimeout() {
         if (_uiState.value.currentScreen == Screen.SplashScreen) {
             _uiState.update { it.copy(currentScreen = Screen.LoginScreen) }
         }
     }
+    fun dismissError() { _uiState.update { it.copy(errorMessage = null) } }
 
-    fun dismissError() {
-        _uiState.update { it.copy(errorMessage = null) }
-    }
-
-    // === Processamento ===
+    // === Análise Rápida (Chunks) ===
     private fun analyzeChunkAndProvideFeedback(chunkData: String) {
         val dataPoints = parseData(chunkData)
-        if (dataPoints.size < 5) return
         val accData = dataPoints.filter { it.type == "ACC" }
-        if (accData.isEmpty()) return
+        if (accData.size < 5) return
 
         val (freq, depth) = calculateMetricsForChunk(accData)
 
-        // Feedback calibrado
         val freqFeedback = when {
             freq == 0.0 -> "Calculando..."
-            freq in 100.0..120.0 -> "Frequência OK"
-            freq < 100 -> "Mais rápido!"
-            else -> "Mais devagar!"
+            freq in 100.0..120.0 -> "✅ Frequência OK"
+            freq < 100 -> "⚠️ Mais rápido!"
+            else -> "⚠️ Mais devagar!"
         }
 
         val depthFeedback = when {
-            depth == 0.0 -> "Calculando..."
-            depth in 5.0..6.0 -> "Profundidade OK"
-            depth < 5.0 -> "Mais fundo!"
-            else -> "Menos fundo!"
+            depth == 0.0 -> "..."
+            depth in 5.0..6.0 -> "✅ Profundidade OK"
+            depth < 5.0 -> "⚠️ Mais fundo!"
+            else -> "⚠️ Menos fundo!"
         }
 
         val msg = "$freqFeedback | $depthFeedback (${freq.roundToInt()} CPM, ${"%.1f".format(depth)} cm)"
         _uiState.update { it.copy(intermediateFeedback = msg) }
     }
 
-    private fun processAndSaveFinalData(finalData: String) {
-        val dataPoints = parseData(finalData)
-        val accData = dataPoints.filter { it.type == "ACC" }
-        if (accData.size < 10) {
-            _uiState.update { it.copy(intermediateFeedback = "Dados insuficientes.") }
-            return
-        }
-
+    private fun calculateMetricsForChunk(accData: List<SensorDataPoint>): Pair<Double, Double> {
         val duration = (accData.last().timestamp - accData.first().timestamp) / 1000.0
-        if (duration <= 0) return
-
+        if (duration <= 0) return 0.0 to 0.0
         val fs = accData.size / duration
-        val magnitudes = accData.map { it.magnitude() }
-        val timestamps = accData.map { it.timestamp }
 
-        val (interpTimes, interpSignal) = interpolateCubicSplineSafe(magnitudes, timestamps, 2)
-        val unbiased = removeMeanDrift(interpSignal)
-        val fsInterp = interpSignal.size / ((interpTimes.last() - interpTimes.first()) / 1000.0)
-        val filtered = highPassFilter(unbiased, fsInterp, 0.5)
+        val mags = accData.map { it.magnitude() }
+        val filtered = highPassFilter(removeMeanDrift(mags), fs, 0.5)
 
-        val peaks = findPeaksWithProminence(filtered, 1.0f, (fsInterp * 0.4).toInt())
-        val total = peaks.size
+        // Detecção menos rigorosa para feedback rápido (proeminência 3.0f)
+        val peaks = findPeaksWithProminence(filtered, 3.0f, (fs * 0.3).toInt())
 
         val freqs = calculateIndividualFrequencies(accData, peaks)
         val depths = calculateIndividualDepths(accData, peaks)
-        val correctFreq = freqs.count { it in 100.0..120.0 }
-        val correctDepth = depths.count { it in 5.0..6.0 }
 
         val medFreq = if (freqs.isNotEmpty()) freqs.median() else 0.0
         val avgDepth = if (depths.isNotEmpty()) depths.average() else 0.0
 
+        return medFreq to avgDepth
+    }
+
+    // === Análise Final (Precisa) ===
+    private fun processAndSaveFinalData(finalData: String) {
+        val dataPoints = parseData(finalData)
+        val accData = dataPoints.filter { it.type == "ACC" }
+        if (accData.size < 20) {
+            _uiState.update { it.copy(intermediateFeedback = "Dados insuficientes para análise final.") }
+            return
+        }
+
+        val timestamps = accData.map { it.timestamp }
+        val magnitudes = accData.map { it.magnitude() }
+
+        // 1. Interpolação Cúbica (Spline) para suavizar e regularizar a taxa de amostragem
+        val (interpTimes, interpSignal) = interpolateCubicSplineSafe(magnitudes, timestamps, 2)
+        // Recalcula a frequência de amostragem baseada nos dados interpolados
+        val fsInterp = interpSignal.size / ((interpTimes.last() - interpTimes.first()) / 1000.0)
+
+        // 2. Filtragem: Remove drift DC e componentes de baixa frequência (movimento do corpo)
+        val unbiased = removeMeanDrift(interpSignal)
+        val filtered = highPassFilter(unbiased, fsInterp, 0.5)
+
+        // 3. Detecção de Picos RIGOROSA para contagem final precisa
+        // minProm = 5.0f: Exige que a compressão seja forte e clara
+        // minDist = 0.35s: Limita a frequência máxima detectável a ~170 CPM para evitar ruído
+        val peaks = findPeaksWithProminence(filtered, 5.0f, (fsInterp * 0.35).toInt())
+        val total = peaks.size
+
+        // 4. Cálculos métricos usando os dados interpolados
+        val freqs = calculateIndividualFrequenciesInterp(interpTimes, peaks)
+        val depths = calculateIndividualDepthsInterp(interpSignal, interpTimes, peaks)
+
+        val medFreq = if (freqs.isNotEmpty()) freqs.median() else 0.0
+        val avgDepth = if (depths.isNotEmpty()) depths.average() else 0.0
+        val correctFreq = freqs.count { it in 100.0..120.0 }
+        val correctDepth = depths.count { it in 5.0..6.0 }
+
         val result = TestResult(
-            System.currentTimeMillis(),
-            medFreq,
-            avgDepth,
-            total,
-            correctFreq,
-            correctDepth
+            System.currentTimeMillis(), medFreq, avgDepth, total, correctFreq, correctDepth
         )
 
-        _uiState.update { it.copy(lastTestResult = result, intermediateFeedback = "Teste concluído!") }
-
+        _uiState.update { it.copy(lastTestResult = result, intermediateFeedback = "Teste finalizado!") }
         viewModelScope.launch(Dispatchers.IO) {
             dataRepository.newResultReceived(result, getApplication())
         }
     }
 
-    // === FUNÇÃO CORRIGIDA E CALIBRADA ===
-    private fun calculateMetricsForChunk(accData: List<SensorDataPoint>): Pair<Double, Double> {
-        if (accData.size < 5) return 0.0 to 0.0
+    // === Funções Matemáticas e Auxiliares ===
 
-        val durationSec = (accData.last().timestamp - accData.first().timestamp) / 1000.0
-        if (durationSec <= 0) return 0.0 to 0.0
-
-        val fs = accData.size / durationSec
-        val magnitudes = accData.map { it.magnitude() }
-        val timestamps = accData.map { it.timestamp }
-
-        val (interpTimes, interpSignal) = interpolateCubicSplineSafe(magnitudes, timestamps, 2)
-        val unbiased = removeMeanDrift(interpSignal)
-        val fsInterp = interpSignal.size / ((interpTimes.last() - interpTimes.first()) / 1000.0)
-        val filtered = highPassFilter(unbiased, fsInterp, 0.5)
-
-        val peaks = findPeaksWithProminence(filtered, 1.0f, (fsInterp * 0.4).toInt())
-
-        // Filtros calibrados
-        val freqs = calculateIndividualFrequencies(accData, peaks)
-        val depths = calculateIndividualDepths(accData, peaks).map { it.coerceIn(0.0, 10.0) }
-
-        val medianFreq = if (freqs.isNotEmpty()) freqs.median() else 0.0
-        val avgDepth = if (depths.isNotEmpty()) depths.average() else 0.0
-
-        return medianFreq to avgDepth
-    }
-
-    // === Utilitários ===
-    private fun interpolateCubicSplineSafe(
-        data: List<Float>,
-        timestamps: List<Long>,
-        upsampleFactor: Int = 2
-    ): Pair<List<Long>, List<Float>> {
+    // Interpolação Cúbica (Spline) com proteção contra erros
+    private fun interpolateCubicSplineSafe(data: List<Float>, timestamps: List<Long>, upsampleFactor: Int = 2): Pair<List<Long>, List<Float>> {
         return try {
-            if (data.size < 4 || timestamps.size != data.size)
-                return timestamps to data
-
-            val sorted = timestamps.zip(data).sortedBy { it.first }
-            val x = sorted.map { it.first / 1000.0 }.toDoubleArray()
+            if (data.size < 5) return timestamps to data
+            Log.d("RCP_SPLINE", "Iniciando Spline com ${data.size} pontos.")
+            // Garante que os timestamps sejam únicos e ordenados para a Spline não falhar
+            val sorted = timestamps.zip(data).sortedBy { it.first }.distinctBy { it.first }
+            val x = sorted.map { it.first / 1000.0 }.toDoubleArray() // segundos
             val y = sorted.map { it.second.toDouble() }.toDoubleArray()
+
             val spline = SplineInterpolator().interpolate(x, y)
+
             val totalDur = x.last() - x.first()
-            val newCount = (x.size - 1) * upsampleFactor
+            val newCount = (sorted.size - 1) * upsampleFactor
             val newTimes = DoubleArray(newCount) { i -> x.first() + i * (totalDur / newCount) }
-            val newValues = newTimes.map { spline.value(it) }
+            val newValues = newTimes.map { spline.value(it).toFloat() }
             val newTimestamps = newTimes.map { (it * 1000).roundToLong() }
-            newTimestamps to newValues.map { it.toFloat() }
+
+            Log.d("RCP_SPLINE", "Spline finalizada. Gerados ${newValues.size} pontos.")
+            newTimestamps to newValues
         } catch (e: Exception) {
-            Log.e("SPLINE", "Erro na interpolação cúbica: ${e.message}")
+            Log.e("RCP_SPLINE", "Falha na Spline, usando dados originais: ${e.message}")
             timestamps to data
         }
     }
 
-    private fun parseData(csvData: String): List<SensorDataPoint> =
-        csvData.split("\n").drop(1).mapNotNull { line ->
-            try {
-                val p = line.split(",")
-                if (p.size == 5)
-                    SensorDataPoint(p[0].toLong(), p[1], p[2].toFloat(), p[3].toFloat(), p[4].toFloat())
-                else null
-            } catch (_: Exception) { null }
+    // Algoritmo de detecção de picos baseado em proeminência
+    private fun findPeaksWithProminence(data: List<Float>, minProm: Float, minDist: Int): List<Int> {
+        val peaks = (1 until data.lastIndex).filter { data[it] > data[it - 1] && data[it] > data[it + 1] }
+        val valid = mutableListOf<Int>()
+        var last = -minDist
+        for (i in peaks) {
+            if (i - last < minDist) continue
+            // Calcula proeminência local simplificada
+            val windowStart = (i - minDist * 2).coerceAtLeast(0)
+            val windowEnd = (i + minDist * 2).coerceAtMost(data.size)
+            val localMin = data.subList(windowStart, windowEnd).minOrNull() ?: 0f
+            if ((data[i] - localMin) > minProm) {
+                valid.add(i)
+                last = i
+            }
         }
-
-    private fun removeMeanDrift(data: List<Float>): List<Float> {
-        if (data.isEmpty()) return data
-        val mean = data.average().toFloat()
-        return data.map { it - mean }
+        return valid
     }
 
+    // Filtro Passa-Alta (Butterworth 1ª ordem simplificado)
     private fun highPassFilter(data: List<Float>, fs: Double, cutoff: Double): List<Float> {
         if (data.isEmpty()) return data
         val rc = 1.0 / (2 * Math.PI * cutoff)
@@ -291,62 +276,76 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return out
     }
 
-    private fun findPeaksWithProminence(data: List<Float>, minProm: Float, minDist: Int): List<Int> {
-        if (data.size < 3) return emptyList()
-        val peaks = (1 until data.lastIndex).filter { data[it] > data[it - 1] && data[it] > data[it + 1] }
-        val valid = mutableListOf<Int>()
-        var last = -minDist
-        for (i in peaks) {
-            val left = (0 until i).map { data[it] }.minOrNull() ?: data[i]
-            val right = ((i + 1) until data.size).map { data[it] }.minOrNull() ?: data[i]
-            val prom = data[i] - maxOf(left, right)
-            if (prom > minProm && i - last >= minDist) {
-                valid.add(i)
-                last = i
-            }
-        }
-        return valid
+    private fun removeMeanDrift(data: List<Float>): List<Float> {
+        if (data.isEmpty()) return data
+        val mean = data.average().toFloat()
+        return data.map { it - mean }
     }
 
+    // --- Calculadoras para dados RAW (Chunk) ---
     private fun calculateIndividualFrequencies(data: List<SensorDataPoint>, peaks: List<Int>): List<Double> {
-        if (peaks.size < 2) return emptyList()
-        return peaks.windowed(2).mapNotNull { (i1, i2) ->
-            val dt = (data[i2].timestamp - data[i1].timestamp) / 1000.0
-            if (dt > 0.1) 60.0 / dt else null
-        }
+        return peaks.zipWithNext { a, b ->
+            val dt = (data[b].timestamp - data[a].timestamp) / 1000.0
+            if (dt > 0.2) 60.0 / dt else null
+        }.filterNotNull()
     }
 
     private fun calculateIndividualDepths(data: List<SensorDataPoint>, peaks: List<Int>): List<Double> {
-        if (peaks.size < 2) return emptyList()
+        // Estimativa rápida de profundidade por integração dupla simples
         val alpha = 0.8f
-        var gZ = data.first().z
-        val linZ = data.map {
-            gZ = alpha * gZ + (1 - alpha) * it.z
-            it.z - gZ
+        var g = data.first().magnitude()
+        val linear = data.map {
+            g = alpha * g + (1 - alpha) * it.magnitude()
+            it.magnitude() - g
         }
-        return peaks.windowed(2).mapNotNull { (s, e) ->
-            if (s < 0 || e >= linZ.size || s >= e) return@mapNotNull null
+        return peaks.zipWithNext { start, end ->
             var v = 0.0
-            var x = 0.0
-            var xMax = 0.0
-            for (j in s until e - 1) {
-                val dt = (data[j + 1].timestamp - data[j].timestamp) / 1000.0
-                val a = (linZ[j] + linZ[j + 1]) / 2.0
-                v += a * dt
-                x += v * dt
-                if (abs(x) > xMax) xMax = abs(x)
+            var pos = 0.0
+            var maxPos = 0.0
+            for (i in start until end - 1) {
+                val dt = (data[i + 1].timestamp - data[i].timestamp) / 1000.0
+                v += linear[i] * dt
+                pos += v * dt
+                maxPos = maxOf(maxPos, abs(pos))
             }
-            // Calibração: limite entre 5 e 6 cm como meta ideal
-            (xMax * 100).takeIf { it in 0.5..10.0 }
+            (maxPos * 100).coerceIn(0.0, 12.0) // Retorna em cm
         }
     }
 
-    private fun List<Double>.median(): Double {
-        if (isEmpty()) return 0.0
-        val s = sorted()
-        val m = s.size / 2
-        return if (s.size % 2 == 0) (s[m - 1] + s[m]) / 2.0 else s[m]
+    // --- Calculadoras para dados INTERPOLADOS (Final) ---
+    private fun calculateIndividualFrequenciesInterp(times: List<Long>, peaks: List<Int>): List<Double> {
+        return peaks.zipWithNext { a, b ->
+            val dt = (times[b] - times[a]) / 1000.0
+            if (dt > 0.2) 60.0 / dt else null
+        }.filterNotNull()
     }
+
+    private fun calculateIndividualDepthsInterp(signal: List<Float>, times: List<Long>, peaks: List<Int>): List<Double> {
+        return peaks.zipWithNext { start, end ->
+            var v = 0.0
+            var pos = 0.0
+            var maxPos = 0.0
+            for (i in start until end) {
+                val dt = (times[i + 1] - times[i]) / 1000.0
+                v += signal[i] * dt
+                pos += v * dt
+                maxPos = maxOf(maxPos, abs(pos))
+            }
+            (maxPos * 100).coerceIn(0.0, 15.0) // Cm com limite de segurança
+        }
+    }
+
+    private fun List<Double>.median() = sorted().let {
+        if (it.isEmpty()) 0.0 else if (it.size % 2 == 0) (it[it.size / 2 - 1] + it[it.size / 2]) / 2.0 else it[it.size / 2]
+    }
+
+    private fun parseData(csvData: String): List<SensorDataPoint> =
+        csvData.split("\n").drop(1).mapNotNull {
+            try {
+                val p = it.split(",")
+                if (p.size >= 5) SensorDataPoint(p[0].toLong(), p[1], p[2].toFloat(), p[3].toFloat(), p[4].toFloat()) else null
+            } catch (_: Exception) { null }
+        }
 
     override fun onCleared() {
         super.onCleared()
