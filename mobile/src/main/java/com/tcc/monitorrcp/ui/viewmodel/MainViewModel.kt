@@ -21,25 +21,31 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.apache.commons.math3.analysis.interpolation.SplineInterpolator
+import java.io.File
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
-data class UiState(
-    val currentScreen: Screen = Screen.SplashScreen,
-    val userName: String? = null,
-    val lastReceivedData: String = "Aguardando início...",
-    val intermediateFeedback: String = "Inicie o teste no relógio.",
-    val lastTestResult: TestResult? = null,
-    val history: List<TestResult> = emptyList(),
-    val errorMessage: String? = null
-)
+// A classe UiState NÃO está mais neste arquivo. Ela está em UiState.kt
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState = _uiState.asStateFlow()
     private val dataRepository = DataRepository
+
+    // === Variáveis da Máquina de Estados para Análise Final ===
+    private var waitingForRecoil = false
+    private var lastValidCompressionTime = 0L
+
+    // --- ALTERAÇÃO 1: AJUSTE DO LIMIAR ---
+    // Limiar de impacto baixo (0.6f)
+    private val IMPACT_THRESHOLD_FINAL = 0.6f
+
+    // --- ALTERAÇÃO 2: LIMIAR DE RECUO ---
+    // Limiar de recuo BEM mais baixo (0.1f) para criar uma "janela" maior
+    private val RECOIL_THRESHOLD_FINAL = 0.1f
+    private val MIN_COMPRESSION_INTERVAL_FINAL = 300L
 
     // === Receivers de Broadcast ===
     private val dataChunkReceiver = object : BroadcastReceiver() {
@@ -55,8 +61,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         override fun onReceive(context: Context?, intent: Intent?) {
             intent?.getStringExtra(ListenerService.EXTRA_DATA)?.let { finalData ->
                 _uiState.update { it.copy(lastReceivedData = finalData) }
+
+                // Salva o arquivo CSV completo no cache para depuração
+                saveRawDataForDebugging(getApplication(), finalData)
+
                 processAndSaveFinalData(finalData)
-                // Força a navegação para a tela de dados se ainda não estiver nela
+
                 if (_uiState.value.currentScreen != Screen.DataScreen) {
                     _uiState.update { it.copy(currentScreen = Screen.DataScreen) }
                 }
@@ -178,27 +188,60 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
-        val timestamps = accData.map { it.timestamp }
+        val timestampsRaw = accData.map { it.timestamp }
         val magnitudes = accData.map { it.magnitude() }
 
         // 1. Interpolação Cúbica (Spline) para suavizar e regularizar a taxa de amostragem
-        val (interpTimes, interpSignal) = interpolateCubicSplineSafe(magnitudes, timestamps, 2)
+        val (interpTimes, interpSignal) = interpolateCubicSplineSafe(magnitudes, timestampsRaw, 2)
         // Recalcula a frequência de amostragem baseada nos dados interpolados
         val fsInterp = interpSignal.size / ((interpTimes.last() - interpTimes.first()) / 1000.0)
 
         // 2. Filtragem: Remove drift DC e componentes de baixa frequência (movimento do corpo)
         val unbiased = removeMeanDrift(interpSignal)
+
+        // --- ALTERAÇÃO 3: AJUSTE DO FILTRO ---
+        // Mantemos o filtro em 0.5 Hz para cortar o ruído
         val filtered = highPassFilter(unbiased, fsInterp, 0.5)
 
-        // 3. Detecção de Picos RIGOROSA para contagem final precisa
-        // minProm = 5.0f: Exige que a compressão seja forte e clara
-        // minDist = 0.35s: Limita a frequência máxima detectável a ~170 CPM para evitar ruído
-        val peaks = findPeaksWithProminence(filtered, 5.0f, (fsInterp * 0.35).toInt())
-        val total = peaks.size
 
-        // 4. Cálculos métricos usando os dados interpolados
+        // --- LÓGICA DE DETECÇÃO DE PICO MODIFICADA ---
+        waitingForRecoil = false
+        lastValidCompressionTime = 0L
+        val validPeakIndices = mutableListOf<Int>() // Lista para guardar os ÍNDICES dos picos válidos
+
+        for (i in filtered.indices) {
+            val currentMag = filtered[i]
+            val now = interpTimes[i] // Usa o timestamp interpolado
+
+            if (!waitingForRecoil) {
+                // ESTADO 1: Procurando IMPACTO (pico positivo)
+                if (currentMag > IMPACT_THRESHOLD_FINAL && (now - lastValidCompressionTime > MIN_COMPRESSION_INTERVAL_FINAL)) {
+                    validPeakIndices.add(i) // Guarda o ÍNDICE deste pico
+                    waitingForRecoil = true
+                    lastValidCompressionTime = now
+
+                    // Imprime o valor do pico que ele acabou de contar
+                    Log.d("RCP_PEAK_DEBUG", "Pico detectado! Valor: $currentMag")
+                }
+            } else {
+                // ESTADO 2: Aguardando RECUO (vale)
+                if (currentMag < RECOIL_THRESHOLD_FINAL) {
+                    waitingForRecoil = false
+                }
+                // Timeout de segurança (se travar por 1.5s, reseta)
+                if (now - lastValidCompressionTime > 1500) {
+                    waitingForRecoil = false
+                }
+            }
+        }
+
+        val peaks = validPeakIndices
+        val total = peaks.size
+        // --- FIM DA MODIFICAÇÃO ---
+
+        // 4. Cálculos métricos (continuam iguais, agora usam os picos mais precisos)
         val freqs = calculateIndividualFrequenciesInterp(interpTimes, peaks)
-        val depths = calculateIndividualDepthsInterp(interpSignal, interpTimes, peaks)
+        val depths = calculateIndividualDepthsInterp(interpSignal, interpTimes, peaks) // Usa interpSignal (sem filtro)
 
         val medFreq = if (freqs.isNotEmpty()) freqs.median() else 0.0
         val avgDepth = if (depths.isNotEmpty()) depths.average() else 0.0
@@ -209,9 +252,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             System.currentTimeMillis(), medFreq, avgDepth, total, correctFreq, correctDepth
         )
 
+        Log.d("RCP_DEBUG", "ANÁLISE FINAL: Total de picos contados: $total")
+
         _uiState.update { it.copy(lastTestResult = result, intermediateFeedback = "Teste finalizado!") }
         viewModelScope.launch(Dispatchers.IO) {
             dataRepository.newResultReceived(result, getApplication())
+        }
+    }
+
+    /**
+     * Salva a string de dados brutos em um arquivo .csv no diretório de cache do app.
+     * O caminho do arquivo será impresso no Logcat para depuração.
+     */
+    private fun saveRawDataForDebugging(context: Context, data: String) {
+        try {
+            val timestamp = System.currentTimeMillis()
+            val fileName = "RCP_RAW_DATA_${timestamp}.csv"
+            val cacheDir = context.cacheDir
+            val file = File(cacheDir, fileName)
+
+            file.writeText(data)
+
+            // Imprime o caminho absoluto no Logcat para ser fácil de achar
+            Log.d("RCP_DEBUG", "Dados brutos de depuração salvos em: ${file.absolutePath}")
+
+        } catch (e: Exception) {
+            Log.e("RCP_DEBUG", "Falha ao salvar arquivo de depuração", e)
         }
     }
 
@@ -224,14 +290,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             Log.d("RCP_SPLINE", "Iniciando Spline com ${data.size} pontos.")
             // Garante que os timestamps sejam únicos e ordenados para a Spline não falhar
             val sorted = timestamps.zip(data).sortedBy { it.first }.distinctBy { it.first }
+            if (sorted.size < 5) return timestamps to data // Proteção
+
             val x = sorted.map { it.first / 1000.0 }.toDoubleArray() // segundos
             val y = sorted.map { it.second.toDouble() }.toDoubleArray()
 
             val spline = SplineInterpolator().interpolate(x, y)
 
             val totalDur = x.last() - x.first()
-            val newCount = (sorted.size - 1) * upsampleFactor
-            val newTimes = DoubleArray(newCount) { i -> x.first() + i * (totalDur / newCount) }
+            if (totalDur <= 0) return timestamps to data // Proteção
+
+            val newCount = (sorted.size) * upsampleFactor
+
+            val newTimes = DoubleArray(newCount) { i -> x.first() + i * (totalDur / (newCount -1)) } // (newCount - 1) para incluir o último ponto
             val newValues = newTimes.map { spline.value(it).toFloat() }
             val newTimestamps = newTimes.map { (it * 1000).roundToLong() }
 
@@ -243,7 +314,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Algoritmo de detecção de picos baseado em proeminência
+    // Algoritmo de detecção de picos baseado em proeminência (Usado apenas para CHUNK agora)
     private fun findPeaksWithProminence(data: List<Float>, minProm: Float, minDist: Int): List<Int> {
         val peaks = (1 until data.lastIndex).filter { data[it] > data[it - 1] && data[it] > data[it + 1] }
         val valid = mutableListOf<Int>()
@@ -264,7 +335,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // Filtro Passa-Alta (Butterworth 1ª ordem simplificado)
     private fun highPassFilter(data: List<Float>, fs: Double, cutoff: Double): List<Float> {
-        if (data.isEmpty()) return data
+        if (data.isEmpty() || fs <= 0.0) return data // Proteção contra divisão por zero
         val rc = 1.0 / (2 * Math.PI * cutoff)
         val dt = 1.0 / fs
         val alpha = rc / (rc + dt)
@@ -303,7 +374,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             var pos = 0.0
             var maxPos = 0.0
             for (i in start until end - 1) {
+                if (i + 1 >= data.size) break // Proteção
                 val dt = (data[i + 1].timestamp - data[i].timestamp) / 1000.0
+                if (dt < 0) continue // Proteção
                 v += linear[i] * dt
                 pos += v * dt
                 maxPos = maxOf(maxPos, abs(pos))
@@ -320,14 +393,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }.filterNotNull()
     }
 
+    // Modificado para usar 'signal' (dados brutos interpolados) para integração
     private fun calculateIndividualDepthsInterp(signal: List<Float>, times: List<Long>, peaks: List<Int>): List<Double> {
         return peaks.zipWithNext { start, end ->
             var v = 0.0
             var pos = 0.0
             var maxPos = 0.0
+            // Usa o sinal interpolado mas NÃO filtrado (unbiased) para calcular profundidade
+            val dataToIntegrate = removeMeanDrift(signal)
+
             for (i in start until end) {
+                // Adiciona verificação de índice para segurança
+                if (i + 1 >= times.size || i >= dataToIntegrate.size) break
+
                 val dt = (times[i + 1] - times[i]) / 1000.0
-                v += signal[i] * dt
+                if (dt < 0) continue // Proteção contra timestamps inválidos
+                v += dataToIntegrate[i] * dt
                 pos += v * dt
                 maxPos = maxOf(maxPos, abs(pos))
             }
