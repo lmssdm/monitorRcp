@@ -1,25 +1,30 @@
 package com.tcc.monitorrcp.ui
 
-import androidx.compose.foundation.Canvas // <-- Import Canvas de volta
+import androidx.annotation.DrawableRes
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayCircleFilled
-import androidx.compose.material.icons.filled.RadioButtonChecked
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset // <-- Import Offset de volta
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -31,8 +36,8 @@ import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.compose.material3.TextFieldDefaults
 
-// 🏠 HomeScreen
 @Composable
 fun HomeScreen(
     name: String,
@@ -40,67 +45,83 @@ fun HomeScreen(
     onHistoryClick: () -> Unit,
     onInstructionsClick: () -> Unit
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(modifier = Modifier.height(32.dp))
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Spacer(modifier = Modifier.height(32.dp))
+            Image(
+                painter = painterResource(id = R.drawable.logo_rcp),
+                contentDescription = "Logo RCP",
+                modifier = Modifier.size(100.dp)
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text("Olá, $name!", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Text("Bem-vindo ao SPAR!", fontSize = 16.sp, color = Color.Gray)
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            Button(
+                onClick = onStartClick,
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+            ) {
+                Text("INICIAR TESTE", fontSize = 16.sp)
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(
+                onClick = onHistoryClick,
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+            ) {
+                Text("HISTÓRICO", fontSize = 16.sp, color = MaterialTheme.colorScheme.onSecondaryContainer)
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(
+                onClick = onInstructionsClick,
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
+            ) {
+                Text("COMO REALIZAR RCP", fontSize = 16.sp, color = MaterialTheme.colorScheme.onTertiaryContainer)
+            }
+
+            Spacer(modifier = Modifier.weight(1f))
+            Spacer(modifier = Modifier.height(32.dp))
+        }
+
         Image(
             painter = painterResource(id = R.drawable.logo_rcp),
-            contentDescription = "Logo RCP",
-            modifier = Modifier.size(100.dp)
+            contentDescription = null,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp)
+                .size(120.dp)
+                .alpha(0.3f)
         )
-        Spacer(modifier = Modifier.height(16.dp))
-        Text("Olá, $name!", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        Text("Bem-vindo ao SPAR!", fontSize = 16.sp, color = Color.Gray)
 
-        Spacer(modifier = Modifier.weight(1f))
-
-        Button(
-            onClick = onStartClick,
-            modifier = Modifier.fillMaxWidth().height(50.dp),
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828))
-        ) {
-            Text("INICIAR TESTE", fontSize = 16.sp)
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Button(
-            onClick = onHistoryClick,
-            modifier = Modifier.fillMaxWidth().height(50.dp),
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color.LightGray)
-        ) {
-            Text("HISTÓRICO", fontSize = 16.sp, color = Color.Black)
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Button(
-            onClick = onInstructionsClick,
-            modifier = Modifier.fillMaxWidth().height(50.dp),
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0277BD))
-        ) {
-            Text("COMO REALIZAR RCP", fontSize = 16.sp)
-        }
-
-        Spacer(modifier = Modifier.weight(1f))
         Text(
-            "Você ajuda pessoas.\nNós ajudamos você!",
-            textAlign = TextAlign.Center,
+            text = "Você ajuda pessoas.\nNós ajudamos você!",
+            textAlign = TextAlign.Start,
             fontSize = 18.sp,
-            fontWeight = FontWeight.SemiBold
+            fontWeight = FontWeight.SemiBold,
+            color = Color.DarkGray,
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = 16.dp, bottom = 32.dp)
         )
-        Spacer(modifier = Modifier.height(32.dp))
     }
 }
 
-// 🚀 SplashScreen
 @Composable
 fun SplashScreen(onTimeout: () -> Unit) {
     LaunchedEffect(Unit) {
@@ -139,66 +160,145 @@ fun SplashScreen(onTimeout: () -> Unit) {
     }
 }
 
-// 🔑 LoginScreen
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LoginScreen(onLogin: (String) -> Unit) {
     var name by remember { mutableStateOf("") }
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(32.dp)
-            .background(Color(0xFFF5F5F5)),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .background(MaterialTheme.colorScheme.background)
     ) {
-        Spacer(Modifier.height(50.dp))
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Spacer(Modifier.height(50.dp))
+            Image(
+                painter = painterResource(id = R.drawable.logo_rcp),
+                contentDescription = "Logo RCP",
+                modifier = Modifier.size(120.dp)
+            )
+            Text(
+                text = "SISTEMA PARA ANÁLISE RCP",
+                color = Color.Black,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = "(Sistema para Análise de Testes de Ressuscitação Cardiopulmonar)",
+                color = Color.Gray,
+                fontSize = 11.sp,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(Modifier.height(60.dp))
+            Text(
+                "Informe seu nome:",
+                modifier = Modifier.fillMaxWidth(),
+                color = Color.DarkGray
+            )
+
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+               // placeholder = { Text("ex. Luiz Michel") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+
+            Spacer(Modifier.height(24.dp))
+
+            Button(
+                onClick = { onLogin(name) },
+                enabled = name.isNotBlank(),
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828))
+            ) {
+                Text("ENTRAR", fontSize = 16.sp, color = Color.White)
+            }
+
+            Spacer(modifier = Modifier.weight(1f))
+        }
+
         Image(
             painter = painterResource(id = R.drawable.logo_rcp),
-            contentDescription = "Logo RCP",
-            modifier = Modifier.size(120.dp)
+            contentDescription = null,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 16.dp, bottom = 16.dp)
+                .size(150.dp)
+                .alpha(0.3f)
         )
+
         Text(
-            text = "SISTEMA PARA ANÁLISE RCP",
-            color = Color.Black,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold
+            text = "Você ajuda pessoas.\nNós ajudamos você!",
+            textAlign = TextAlign.Start,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Color.DarkGray,
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = 16.dp, bottom = 32.dp)
         )
-        Text(
-            text = "(Sistema para Análise de Testes de Ressuscitação Cardiopulmonar)",
-            color = Color.Gray,
-            fontSize = 11.sp,
-            textAlign = TextAlign.Center
-        )
-
-        Spacer(Modifier.height(60.dp))
-        Text("Informe seu nome:", modifier = Modifier.fillMaxWidth(), color = Color.DarkGray)
-
-        OutlinedTextField(
-            value = name,
-            onValueChange = { name = it },
-            placeholder = { Text("ex: Luiz Michel") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(Modifier.height(24.dp))
-
-        Button(
-            onClick = { onLogin(name) },
-            enabled = name.isNotBlank(),
-            modifier = Modifier.fillMaxWidth().height(50.dp),
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828))
-        ) {
-            Text("ENTRAR", fontSize = 16.sp)
-        }
     }
 }
 
-// 📘 InstructionsScreen
-@OptIn(ExperimentalMaterial3Api::class)
+// -----------------------------------------------------------------
+// TELA DE INSTRUÇÕES (CARROSSEL)
+// -----------------------------------------------------------------
+
+data class InstructionStepData(
+    @DrawableRes val imageRes: Int,
+    val title: String,
+    val text: String
+)
+
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun InstructionsScreen(onBack: () -> Unit) {
+
+    val steps = remember {
+        listOf(
+            InstructionStepData(
+                imageRes = R.drawable.passo1,
+                title = "Passo 1:",
+                text = "Posicione a vítima de costas em uma superfície rígida e plana."
+            ),
+            InstructionStepData(
+                imageRes = R.drawable.passo2,
+                title = "Passo 2:",
+                text = "Coloque as mãos sobrepostas no centro do peito da vítima."
+            ),
+            InstructionStepData(
+                imageRes = R.drawable.passo3,
+                title = "Passo 3:",
+                text = "Mantenha os braços esticados e use o peso do seu corpo para comprimir."
+            ),
+            InstructionStepData(
+                imageRes = R.drawable.passo4,
+                title = "Passo 4:",
+                text = "Comprima o tórax a uma profundidade de 5 a 6 centímetros."
+            ),
+            InstructionStepData(
+                imageRes = R.drawable.passo5,
+                title = "Passo 5:",
+                text = "Mantenha um ritmo de 100 a 120 compressões por minuto."
+            ),
+            InstructionStepData(
+                imageRes = R.drawable.passo6,
+                title = "Passo 6:",
+                text = "Permita o retorno completo do tórax entre cada compressão."
+            )
+        )
+    }
+
+    val pagerState = rememberPagerState(pageCount = { steps.size })
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -215,44 +315,79 @@ fun InstructionsScreen(onBack: () -> Unit) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp)
         ) {
-            Text("Como realizar compressões corretas?", style = MaterialTheme.typography.headlineMedium)
-            Spacer(modifier = Modifier.height(24.dp))
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            ) { pageIndex ->
+                InstructionPage(step = steps[pageIndex])
+            }
 
-            InstructionStep(Icons.Default.Info, "Passo 1:", "Posicione a vítima de costas em uma superfície rígida e plana.")
-            InstructionStep(Icons.Default.Info, "Passo 2:", "Coloque as mãos sobrepostas no centro do peito da vítima.")
-            InstructionStep(Icons.Default.Info, "Passo 3:", "Mantenha os braços esticados e use o peso do seu corpo para comprimir.")
-            InstructionStep(Icons.Default.RadioButtonChecked, "Passo 4:", "Comprima o tórax a uma profundidade de 5 a 6 centímetros.")
-            InstructionStep(Icons.Default.PlayCircleFilled, "Passo 5:", "Mantenha um ritmo de 100 a 120 compressões por minuto.")
-            InstructionStep(Icons.Default.CheckCircle, "Passo 6:", "Permita o retorno completo do tórax entre cada compressão.")
+            // Indicadores (pontinhos)
+            Row(
+                Modifier
+                    .height(50.dp)
+                    .fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                repeat(steps.size) { iteration ->
+                    val color = if (pagerState.currentPage == iteration) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                    Box(
+                        modifier = Modifier
+                            .padding(4.dp)
+                            .clip(CircleShape)
+                            .background(color)
+                            .size(12.dp)
+                    )
+                }
+            }
         }
     }
 }
 
+// Composable para desenhar cada PÁGINA do carrossel
 @Composable
-fun InstructionStep(icon: ImageVector, number: String, text: String) {
-    Row(
+fun InstructionPage(step: InstructionStepData) {
+    Column(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 16.dp),
-        verticalAlignment = Alignment.Top
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(40.dp).padding(end = 16.dp)
+        Image(
+            painter = painterResource(id = step.imageRes),
+            contentDescription = step.title,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .clip(RoundedCornerShape(16.dp))
         )
-        Column {
-            Text(number, fontWeight = FontWeight.Bold)
-            Text(text)
-        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Text(
+            text = step.title,
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = step.text,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }
 
-// 📊 HistoryScreen
+// -----------------------------------------------------------------
+// RESTANTE DO ARQUIVO
+// -----------------------------------------------------------------
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryScreen(history: List<TestResult>, onBack: () -> Unit) {
@@ -272,7 +407,7 @@ fun HistoryScreen(history: List<TestResult>, onBack: () -> Unit) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .verticalScroll(rememberScrollState()) // Permite rolar
+                .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
             if (history.isEmpty()) {
@@ -283,13 +418,11 @@ fun HistoryScreen(history: List<TestResult>, onBack: () -> Unit) {
                 Text("Resultados Anteriores", style = MaterialTheme.typography.headlineSmall)
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Card para o primeiro gráfico
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
                     elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
                 ) {
-                    // *** Chama o LineChart original (com Canvas) ***
                     LineChart(
                         data = history.map { it.medianFrequency },
                         label = "Evolução da Frequência (cpm)",
@@ -299,13 +432,11 @@ fun HistoryScreen(history: List<TestResult>, onBack: () -> Unit) {
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Card para o segundo gráfico
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
                     elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
                 ) {
-                    // *** Chama o LineChart original (com Canvas) ***
                     LineChart(
                         data = history.map { it.averageDepth },
                         label = "Evolução da Profundidade (cm)",
@@ -313,7 +444,6 @@ fun HistoryScreen(history: List<TestResult>, onBack: () -> Unit) {
                     )
                 }
 
-                // Lista detalhada dos testes
                 Spacer(modifier = Modifier.height(24.dp))
                 Text("Lista Detalhada", style = MaterialTheme.typography.headlineSmall)
                 Spacer(modifier = Modifier.height(8.dp))
@@ -327,14 +457,13 @@ fun HistoryScreen(history: List<TestResult>, onBack: () -> Unit) {
     }
 }
 
-// *** GRÁFICO ORIGINAL COM CANVAS ***
 @Composable
 fun LineChart(data: List<Double>, label: String, color: Color) {
     val dataPoints = data.takeLast(10)
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(16.dp) // Adiciona padding interno
+            .padding(16.dp)
     ) {
         Text(label, style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(8.dp))
@@ -342,20 +471,16 @@ fun LineChart(data: List<Double>, label: String, color: Color) {
             modifier = Modifier
                 .fillMaxWidth()
                 .height(100.dp)
-            // Background removido para usar o fundo do Card
         ) {
             if (dataPoints.size > 1) {
-                // Inverte os dados para desenhar do mais antigo (esquerda) para o mais novo (direita)
                 val reversedDataPoints = dataPoints.reversed()
                 val stepX = size.width / (reversedDataPoints.size - 1)
                 val minY = reversedDataPoints.minOrNull()?.toFloat() ?: 0f
                 val maxY = reversedDataPoints.maxOrNull()?.toFloat() ?: 1f
-                // Adiciona um pequeno buffer se todos os valores forem iguais para evitar divisão por zero
                 val rangeY = (maxY - minY).takeIf { it > 0f } ?: 1f
 
                 for (i in 0 until reversedDataPoints.size - 1) {
                     val startX = i * stepX
-                    // Normaliza o valor Y para o espaço do Canvas (0 no topo, size.height em baixo)
                     val startY = size.height * (1 - ((reversedDataPoints[i].toFloat() - minY) / rangeY))
                     val endX = (i + 1) * stepX
                     val endY = size.height * (1 - ((reversedDataPoints[i + 1].toFloat() - minY) / rangeY))
@@ -367,14 +492,17 @@ fun LineChart(data: List<Double>, label: String, color: Color) {
 }
 
 
-// 📈 DataScreen
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DataScreen(result: TestResult?, data: String, onBack: () -> Unit) {
+fun DataScreen(
+    result: TestResult?,
+    intermediateFeedback: String,
+    onBack: () -> Unit
+) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Resultados Detalhado") },
+                title = { Text(if (result == null) "Teste em Andamento" else "Resultados do Teste") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Voltar")
@@ -388,37 +516,73 @@ fun DataScreen(result: TestResult?, data: String, onBack: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             if (result != null) {
+                // --- [MUDANÇA] NOVO LAYOUT DE RESULTADO ---
+
+                // Métricas Principais Lado a Lado
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceAround
+                    horizontalArrangement = Arrangement.spacedBy(16.dp) // Espaço entre os cards
                 ) {
-                    ResultMetric("Frequência Mediana", "%.0f".format(result.medianFrequency), "cpm")
-                    ResultMetric("Profundidade Média", "%.1f".format(result.averageDepth), "cm")
+                    ResultMetric(
+                        label = "Frequência Mediana",
+                        value = "%.0f".format(result.medianFrequency),
+                        unit = "cpm",
+                        modifier = Modifier.weight(1f) // Ocupa metade
+                    )
+                    ResultMetric(
+                        label = "Profundidade Média",
+                        value = "%.1f".format(result.averageDepth),
+                        unit = "cm",
+                        modifier = Modifier.weight(1f) // Ocupa metade
+                    )
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
+                // Card de Análise de Qualidade
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Análise de Qualidade", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            text = "Análise de Qualidade",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
                         Spacer(modifier = Modifier.height(16.dp))
+
                         QualityRow("Total de Compressões:", "${result.totalCompressions}")
+
+                        // Divisor para separar o total do resto
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
                         QualityRow("Compressões (Freq. Correta):", "${result.correctFrequencyCount} de ${result.totalCompressions}")
                         QualityRow("Compressões (Prof. Correta):", "${result.correctDepthCount} de ${result.totalCompressions}")
                     }
                 }
             } else {
-                Text("Aguardando teste do relógio...", fontSize = 18.sp)
-                CircularProgressIndicator(modifier = Modifier.padding(16.dp))
-            }
+                // --- TESTE EM ANDAMENTO (Sem mudança) ---
+                Spacer(modifier = Modifier.height(64.dp))
+                Icon(
+                    imageVector = Icons.Default.PlayCircleFilled,
+                    contentDescription = "Testando",
+                    modifier = Modifier.size(80.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.height(16.dp))
 
-            Spacer(modifier = Modifier.height(24.dp))
-            Text("Dados Brutos Recebidos:", fontSize = 16.sp)
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-            Box(
-                modifier = Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())
-            ) {
-                Text(data, fontSize = 10.sp, color = Color.Gray)
+                Text(
+                    text = intermediateFeedback,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center
+                )
+                Text(
+                    text = "Continue as compressões...",
+                    fontSize = 16.sp,
+                    color = Color.Gray,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(32.dp))
+                CircularProgressIndicator(modifier = Modifier.padding(16.dp))
             }
         }
     }
@@ -436,12 +600,39 @@ fun QualityRow(label: String, value: String) {
     }
 }
 
+// [MUDANÇA] Função ResultMetric agora é um Card
 @Composable
-fun ResultMetric(label: String, value: String, unit: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(label, fontSize = 16.sp, color = Color.Gray)
-        Text(value, fontSize = 40.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-        Text(unit, fontSize = 14.sp)
+fun ResultMetric(label: String, value: String, unit: String, modifier: Modifier = Modifier) {
+    Card(
+        modifier = modifier,
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp).fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = value,
+                style = MaterialTheme.typography.displaySmall, // Tamanho grande
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = unit,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 

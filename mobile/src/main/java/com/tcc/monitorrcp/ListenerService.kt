@@ -14,6 +14,7 @@ class ListenerService : WearableListenerService() {
     }
 
     override fun onMessageReceived(messageEvent: MessageEvent) {
+        // [ADICIONE ESTA LINHA]
         Log.d("RCP_DEBUG", "ListenerService RECEBEU MENSAGEM com path: ${messageEvent.path}")
 
         when (messageEvent.path) {
