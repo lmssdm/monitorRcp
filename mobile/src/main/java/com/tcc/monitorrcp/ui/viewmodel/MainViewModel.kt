@@ -84,9 +84,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val finalDataPoints = signalProcessor.parseData(finalData)
                 fullTestDataList.addAll(finalDataPoints)
 
-                // [ALTERAÇÃO] Passa a 'fullTestDataList' (que contém ACC e GYR),
-                // em vez de filtrar 'accData' aqui.
-                processAndSaveFinalData(fullTestDataList)
+                // [CORREÇÃO DO CRASH] Ordena a lista por timestamp ANTES de a enviar
+                // para o processador. Isto garante que a interpolação não falhe.
+                val sortedData = fullTestDataList.sortedBy { it.timestamp }
+
+                processAndSaveFinalData(sortedData)
             }
         }
     }
@@ -167,8 +169,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // === Análise Rápida (Chunks) ===
 
     private fun analyzeChunkAndProvideFeedback(dataPoints: List<SensorDataPoint>) {
-        // O feedback de 5s continua a usar APENAS o acelerómetro,
-        // pois a fusão de sensores é muito pesada para fazer em tempo real
         val accData = dataPoints.filter { it.type == "ACC" }
         if (accData.size < 5) return
 
@@ -205,17 +205,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // === Análise Final (Precisa) ===
 
-    // [ALTERAÇÃO] 'allData' agora contém ACC e GYR
-    private fun processAndSaveFinalData(allData: List<SensorDataPoint>) {
+    private fun processAndSaveFinalData(sortedData: List<SensorDataPoint>) {
         audioManager.stopAndReset()
 
-        if (allData.size < 40) { // Precisa de ACC e GYR
+        if (sortedData.size < 40) {
             _uiState.update { it.copy(intermediateFeedback = "Dados insuficientes para análise final.") }
             return
         }
 
-        // Delega a análise completa (Freq + Profundidade) para o SignalProcessor
-        val result = signalProcessor.analyzeFinalData(allData, System.currentTimeMillis())
+        // [CORREÇÃO DO CRASH] Passa a lista já ordenada
+        val result = signalProcessor.analyzeFinalData(sortedData, System.currentTimeMillis())
 
         _uiState.update { it.copy(lastTestResult = result, intermediateFeedback = "Teste finalizado!") }
         viewModelScope.launch(Dispatchers.IO) {

@@ -7,17 +7,21 @@ import org.apache.commons.math3.analysis.interpolation.SplineInterpolator
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
-// [CORREÇÃO] Imports que estavam em falta
 import kotlin.math.max
 import kotlin.math.min
-// ---
 import kotlin.math.roundToLong
 import kotlin.math.sin
 import kotlin.math.sqrt
 
 object SignalProcessor {
 
-    private const val ADAPTIVE_SENSITIVITY_FACTOR = 7.5
+    // [CORREÇÃO BUG 0 CPM] Limiar Fixo (APENAS para chunks de 5s)
+    // Reduzido para 2.0f para ser mais sensível no feedback em tempo real
+    private const val CHUNK_FIXED_THRESHOLD = 2.0f
+
+    // [CALIBRAÇÃO] Fator de sensibilidade (APENAS para análise final)
+    // Definido como 7.5 para ser menos sensível (corrigir sobre-contagem)
+    private const val FINAL_ADAPTIVE_SENSITIVITY_FACTOR = 7.5
 
     fun analyzeChunk(accData: List<SensorDataPoint>): Pair<Double, Double> {
         val duration = (accData.last().timestamp - accData.first().timestamp) / 1000.0
@@ -29,9 +33,8 @@ object SignalProcessor {
         val butterworth = ButterworthFilter(cutoffFrequency = 0.5, sampleRate = fs, isHighPass = true)
         val filtered = butterworth.apply(removeMeanDrift(mags))
 
-        val threshold = calculateAdaptiveThreshold(filtered) * ADAPTIVE_SENSITIVITY_FACTOR
-
-        val peaks = findPeaksWithProminence(filtered, threshold.toFloat(), (fs * 0.35).toInt())
+        // [CORREÇÃO BUG 0 CPM] Usa o limiar fixo mais baixo para o chunk
+        val peaks = findPeaksWithProminence(filtered, CHUNK_FIXED_THRESHOLD, (fs * 0.35).toInt())
         val freqs = calculateIndividualFrequencies(accData, peaks)
 
         val medFreq = if (freqs.isNotEmpty()) freqs.median() else 0.0
@@ -40,19 +43,27 @@ object SignalProcessor {
         return medFreq to avgDepth
     }
 
+    // A análise final usa o Limiar Adaptativo (MAD)
     fun analyzeFinalData(allData: List<SensorDataPoint>, timestamp: Long): TestResult {
 
         val accData = allData.filter { it.type == "ACC" }
         val gyrData = allData.filter { it.type == "GYR" }
 
+        // [CORREÇÃO DO CRASH] Verificação de segurança
         if (accData.size < 20 || gyrData.size < 20) {
             Log.w("SignalProcessor", "Dados insuficientes de ACC (${accData.size}) ou GYR (${gyrData.size}) para análise de profundidade.")
-            // [CORREÇÃO] Retorna um TestResult de 9 argumentos (com durationInMillis)
             return TestResult(timestamp, 0.0, 0.0, 0, 0, 0, 0, 0, 0L)
         }
 
         // [PASSO 1] Interpola os dados
         val (commonTimestamps, interpolatedAcc, interpolatedGyr) = interpolateSensorData(accData, gyrData)
+
+        // [CORREÇÃO DO CRASH] Verificação de segurança
+        if (commonTimestamps.size < 2) {
+            Log.w("SignalProcessor", "Falha na interpolação (listas não sobrepostas).")
+            return TestResult(timestamp, 0.0, 0.0, 0, 0, 0, 0, 0, 0L)
+        }
+
         val durationInMillis = commonTimestamps.last() - commonTimestamps.first()
         val fs = commonTimestamps.size / (durationInMillis / 1000.0)
 
@@ -62,11 +73,12 @@ object SignalProcessor {
         // [PASSO 3] Integração Dupla
         val depthSignal = doubleIntegrate(linearAcceleration, fs)
 
-        // [PASSO 4] Análise de Picos de Profundidade
+        // [PASSO 4] Análise de Picos (Lógica Robusta na Profundidade)
+        // A contagem agora é feita no sinal de PROFUNDIDADE, não na aceleração.
         val minPeakHeightCm = 1.5 // Profundidade mínima (1.5 cm)
         val minPeakDist = fs * 0.3
 
-        val depthInCm = depthSignal.map { it * 100 } // Converte para cm
+        val depthInCm = depthSignal.map { it * 100 }
         val depthPeaks = findPeaksWithProminence(depthInCm, minPeakHeightCm.toFloat(), minPeakDist.toInt())
 
         val total = depthPeaks.size
@@ -82,12 +94,10 @@ object SignalProcessor {
         val depths = depthPeaks.map { depthInCm[it].toDouble() }
         val avgDepth = depths.average().coerceIn(0.0, 15.0)
 
-        // Contagem de qualidade (Frequência)
         val correctFreq = freqs.count { it in 100.0..120.0 }
         val slowFreq = freqs.count { it < 100.0 }
         val fastFreq = freqs.count { it > 120.0 }
 
-        // Contagem de profundidade (5-6 cm)
         val correctDepth = depths.count { it in 5.0..6.0 }
 
         return TestResult(
@@ -103,37 +113,42 @@ object SignalProcessor {
         )
     }
 
-    /**
-     * [NOVO] Alinha os dados do Acelerómetro e Giroscópio aos mesmos timestamps
-     */
+
     private fun interpolateSensorData(
         accData: List<SensorDataPoint>,
         gyrData: List<SensorDataPoint>
     ): Triple<List<Long>, List<FloatArray>, List<FloatArray>> {
 
+        // [CORREÇÃO DO CRASH] Adicionada verificação de segurança
+        if (accData.isEmpty() || gyrData.isEmpty()) {
+            return Triple(emptyList(), emptyList(), emptyList())
+        }
+
         val startTime = max(accData.first().timestamp, gyrData.first().timestamp)
         val endTime = min(accData.last().timestamp, gyrData.last().timestamp)
 
-        // [CORREÇÃO] Especifica o tipo 'it: SensorDataPoint' para o compilador
-        val accTimestamps = accData.map { it: SensorDataPoint -> it.timestamp.toDouble() }.toDoubleArray()
-        val gyrTimestamps = gyrData.map { it: SensorDataPoint -> it.timestamp.toDouble() }.toDoubleArray()
+        if (startTime >= endTime) {
+            return Triple(emptyList(), emptyList(), emptyList())
+        }
 
-        // 1. Interpola ACC
-        val accX = SplineInterpolator().interpolate(accTimestamps, accData.map { it: SensorDataPoint -> it.x.toDouble() }.toDoubleArray())
-        val accY = SplineInterpolator().interpolate(accTimestamps, accData.map { it: SensorDataPoint -> it.y.toDouble() }.toDoubleArray())
-        val accZ = SplineInterpolator().interpolate(accTimestamps, accData.map { it: SensorDataPoint -> it.z.toDouble() }.toDoubleArray())
+        // [CORREÇÃO DO CRASH] Adiciona .distinctBy { it.timestamp }
+        // para remover duplicados antes de interpolar.
+        val cleanAccData = accData.sortedBy { it.timestamp }.distinctBy { it.timestamp }
+        val cleanGyrData = gyrData.sortedBy { it.timestamp }.distinctBy { it.timestamp }
 
-        // 2. Interpola GYR
-        val gyrX = SplineInterpolator().interpolate(gyrTimestamps, gyrData.map { it: SensorDataPoint -> it.x.toDouble() }.toDoubleArray())
-        val gyrY = SplineInterpolator().interpolate(gyrTimestamps, gyrData.map { it: SensorDataPoint -> it.y.toDouble() }.toDoubleArray())
-        val gyrZ = SplineInterpolator().interpolate(gyrTimestamps, gyrData.map { it: SensorDataPoint -> it.z.toDouble() }.toDoubleArray())
+        val accTimestamps = cleanAccData.map { it.timestamp.toDouble() }.toDoubleArray()
+        val gyrTimestamps = cleanGyrData.map { it.timestamp.toDouble() }.toDoubleArray()
 
-        // 3. Cria a nova lista de tempo comum (a 100Hz = 10ms)
-        // [CORREÇÃO] 'step' é uma função 'infix', o uso estava correto,
-        // mas o erro de 'min/max' deve ter confundido o compilador.
+        val accX = SplineInterpolator().interpolate(accTimestamps, cleanAccData.map { it.x.toDouble() }.toDoubleArray())
+        val accY = SplineInterpolator().interpolate(accTimestamps, cleanAccData.map { it.y.toDouble() }.toDoubleArray())
+        val accZ = SplineInterpolator().interpolate(accTimestamps, cleanAccData.map { it.z.toDouble() }.toDoubleArray())
+
+        val gyrX = SplineInterpolator().interpolate(gyrTimestamps, cleanGyrData.map { it.x.toDouble() }.toDoubleArray())
+        val gyrY = SplineInterpolator().interpolate(gyrTimestamps, cleanGyrData.map { it.y.toDouble() }.toDoubleArray())
+        val gyrZ = SplineInterpolator().interpolate(gyrTimestamps, cleanGyrData.map { it.z.toDouble() }.toDoubleArray())
+
         val commonTimestamps = (startTime..endTime step 10L).toList()
 
-        // 4. Gera os novos sinais alinhados
         val interpolatedAcc = commonTimestamps.map { t ->
             floatArrayOf(accX.value(t.toDouble()).toFloat(), accY.value(t.toDouble()).toFloat(), accZ.value(t.toDouble()).toFloat())
         }
@@ -144,10 +159,7 @@ object SignalProcessor {
         return Triple(commonTimestamps, interpolatedAcc, interpolatedGyr)
     }
 
-    /**
-     * [NOVO] Aplica um Filtro Complementar para fundir ACC e GYR
-     * e remover a gravidade. Retorna a aceleração linear vertical.
-     */
+
     private fun complementaryFilter(
         accData: List<FloatArray>,
         gyrData: List<FloatArray>,
@@ -165,23 +177,16 @@ object SignalProcessor {
             val acc = accData[i]
             val gyr = gyrData[i]
 
-            // --- Fusão de Sensores ---
-
-            // 1. Ângulo do Acelerómetro
             val anglePitchAcc = atan2(acc[1].toDouble(), acc[2].toDouble())
             val angleRollAcc = atan2(-acc[0].toDouble(), sqrt(acc[1] * acc[1] + acc[2] * acc[2].toDouble()))
 
-            // 2. Ângulo do Giroscópio (Integração)
-            anglePitch += gyr[0] * dt // Rotação no Eixo X
-            angleRoll += gyr[1] * dt  // Rotação no Eixo Y
+            anglePitch += gyr[0] * dt
+            angleRoll += gyr[1] * dt
 
-            // 3. Filtro Complementar (A Fusão)
             anglePitch = alpha * anglePitch + (1.0 - alpha) * anglePitchAcc
             angleRoll = alpha * angleRoll + (1.0 - alpha) * angleRollAcc
 
-            // --- Remoção da Gravidade ---
-
-            val g = 9.81 // Gravidade
+            val g = 9.81
 
             val linAccZ = acc[0] * sin(angleRoll) -
                     acc[1] * sin(anglePitch) * cos(angleRoll) +
@@ -194,13 +199,10 @@ object SignalProcessor {
         return butterworth.apply(linearAcceleration)
     }
 
-    /**
-     * [NOVO] Integração Dupla (com remoção de drift) para obter Posição (Profundidade)
-     */
+
     private fun doubleIntegrate(acceleration: List<Float>, fs: Double): List<Float> {
         val dt = 1.0 / fs
 
-        // 1. Integração para Velocidade
         var velocity = 0.0
         val velocitySignal = FloatArray(acceleration.size)
         val alphaV = 0.99
@@ -210,7 +212,6 @@ object SignalProcessor {
             velocitySignal[i] = velocity.toFloat()
         }
 
-        // 2. Integração para Posição
         var position = 0.0
         val positionSignal = FloatArray(acceleration.size)
         val alphaP = 0.99
