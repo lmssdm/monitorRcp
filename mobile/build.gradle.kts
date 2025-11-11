@@ -2,8 +2,8 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
-    // ✅ Necessário para o compilador de anotações do Room
     id("kotlin-kapt")
+    alias(libs.plugins.androidx.room)
 }
 
 android {
@@ -17,6 +17,7 @@ android {
         versionCode = 1
         versionName = "1.0"
 
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -27,6 +28,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+
 
         }
     }
@@ -50,9 +52,16 @@ android {
 
     packaging {
 
+
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+    }
+
+    // Esta linha é necessária pelo plugin do Room
+    // Ela diz ao Room onde guardar o histórico da base de dados
+    room {
+        schemaDirectory("$projectDir/schemas")
     }
 }
 
@@ -85,7 +94,8 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
-    // ✅ Lifecycle + ViewModel (para ViewModelScope)
+    // ✅
+    // Lifecycle + ViewModel (para ViewModelScope)
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.4")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
 
@@ -100,3 +110,6 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
+
+// [CORREÇÃO] O bloco 'kapt { ... }' que estava aqui em baixo foi REMOVIDO
+// porque era duplicado com o bloco 'room { ... }' lá de cima.

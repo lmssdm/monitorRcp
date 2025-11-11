@@ -40,31 +40,22 @@ class WearViewModel(application: Application) : AndroidViewModel(application), S
 
     private val repository = SensorRepository(application, viewModelScope, this)
 
-    private val SEND_INTERVAL = 10000L
+    private val SEND_INTERVAL = 5000L
     private var capturedData = mutableListOf("Timestamp,Type,X,Y,Z")
     private var timerJob: Job? = null
     private var chunkSendJob: Job? = null
 
     private var lastPeakTime: Long? = null
-    // Inicializa com 9.8 (gravidade média da Terra), será ajustado pelo filtro
     private var gravityMagnitude = 9.8f
     private val alpha = 0.8f
     private val vibrator = application.getSystemService(Vibrator::class.java)
 
-    // === CONTROLE DE PRECISÃO ===
     private var isFirstReading = true
     private var lastValidCompressionTime = 0L
     private var waitingForRecoil = false
 
-    // [IMPORTANTE] Limiar de Magnitude para detectar IMPACTO (fundo da compressão)
-    // Quando você empurra e bate embaixo, a magnitude sobe muito acima de 9.8G.
-    // 3.0f significa que estamos procurando um pico de força de ~3m/s² acima da gravidade.
     private val IMPACT_THRESHOLD = 3.0f
-
-    // Limiar para considerar que a mão subiu (alivio de pressão, magnitude cai ou volta ao normal)
     private val RECOIL_THRESHOLD = 0.5f
-
-    // 300ms de intervalo mínimo = máx 200 CPM. Evita contagem dupla.
     private val MIN_COMPRESSION_INTERVAL = 300L
 
     fun startCapture() {
@@ -120,28 +111,43 @@ class WearViewModel(application: Application) : AndroidViewModel(application), S
         resetFeedback()
     }
 
+    // [ALTERAÇÃO] Esta função foi modificada para capturar AMBOS os sensores
     override fun onSensorChanged(event: SensorEvent?) {
-        if (_uiState.value.isCapturing && event != null && event.sensor.type == Sensor.TYPE_ACCELEROMETER) {
-            val x = event.values[0]
-            val y = event.values[1]
-            val z = event.values[2]
-            val timestamp = System.currentTimeMillis()
+        if (!_uiState.value.isCapturing || event == null) return
 
-            // Salva os dados brutos para o celular fazer a análise completa depois
-            capturedData.add("$timestamp,ACC,$x,$y,$z")
+        val timestamp = System.currentTimeMillis()
+        val x = event.values[0]
+        val y = event.values[1]
+        val z = event.values[2]
 
-            // Calcula a Magnitude Total (independente da orientação do relógio)
-            val currentMagnitude = sqrt(x*x + y*y + z*z)
+        // Usa um 'when' para lidar com os diferentes tipos de sensor
+        when (event.sensor.type) {
 
-            if (isFirstReading) {
-                gravityMagnitude = currentMagnitude
-                isFirstReading = false
+            // Caso 1: Acelerómetro
+            Sensor.TYPE_ACCELEROMETER -> {
+                // Salva os dados brutos para o telemóvel fazer a análise completa (Profundidade)
+                capturedData.add("$timestamp,ACC,$x,$y,$z")
+
+                // Calcula a Magnitude Total
+                val currentMagnitude = sqrt(x*x + y*y + z*z)
+
+                if (isFirstReading) {
+                    gravityMagnitude = currentMagnitude
+                    isFirstReading = false
+                }
+
+                // Analisa a magnitude para o feedback LOCAL (vibração e texto no relógio)
+                val feedback = analyzeCompressionMagnitude(currentMagnitude)
+                if (feedback != null) {
+                    _uiState.update { it.copy(feedbackText = feedback) }
+                }
             }
 
-            // Analisa usando a magnitude em vez de apenas o eixo Z
-            val feedback = analyzeCompressionMagnitude(currentMagnitude)
-            if (feedback != null) {
-                _uiState.update { it.copy(feedbackText = feedback) }
+            // [ALTERAÇÃO] Caso 2: Giroscópio
+            Sensor.TYPE_GYROSCOPE -> {
+                // Apenas guarda os dados brutos para o telemóvel.
+                // Não é necessário para o feedback local do relógio.
+                capturedData.add("$timestamp,GYR,$x,$y,$z")
             }
         }
     }
@@ -149,20 +155,17 @@ class WearViewModel(application: Application) : AndroidViewModel(application), S
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
     // ------------------------------------------------------------
-    // NOVA ANÁLISE USANDO MAGNITUDE (FUSÃO DE EIXOS)
+    // ANÁLISE LOCAL (só para feedback do relógio, não afeta o telemóvel)
     // ------------------------------------------------------------
     private fun analyzeCompressionMagnitude(currentMag: Float): String? {
         val now = System.currentTimeMillis()
 
         // 1. Filtro Passa-Alta na Magnitude
-        // gravityMagnitude aprende qual é a força constante (aprox 9.8)
         gravityMagnitude = alpha * gravityMagnitude + (1 - alpha) * currentMag
-        // linearMagnitude é só a variação brusca (o movimento da RCP)
         val linearMagnitude = currentMag - gravityMagnitude
 
         if (!waitingForRecoil) {
             // ESTADO 1: Procurando IMPACTO (pico positivo de magnitude)
-            // Durante a compressão, a desaceleração brusca no peito gera um pico de força > 9.8g
             if (linearMagnitude > IMPACT_THRESHOLD && (now - lastValidCompressionTime > MIN_COMPRESSION_INTERVAL)) {
                 waitingForRecoil = true
                 lastValidCompressionTime = now
@@ -187,11 +190,9 @@ class WearViewModel(application: Application) : AndroidViewModel(application), S
             }
         } else {
             // ESTADO 2: Aguardando RETORNO (alivio da força)
-            // Esperamos a magnitude cair de volta para perto do normal (ou abaixo dele durante a subida)
             if (linearMagnitude < RECOIL_THRESHOLD) {
                 waitingForRecoil = false
             }
-            // Timeout de segurança (se travar por 1.5s, reseta)
             if (now - lastValidCompressionTime > 1500) {
                 waitingForRecoil = false
             }

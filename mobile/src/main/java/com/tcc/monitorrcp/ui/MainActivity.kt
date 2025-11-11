@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -13,11 +14,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import com.tcc.monitorrcp.data.DataRepository
 import com.tcc.monitorrcp.model.Screen
+import com.tcc.monitorrcp.model.TestResult
 import com.tcc.monitorrcp.ui.theme.MonitorRcpTheme
 import com.tcc.monitorrcp.ui.viewmodel.MainViewModel
 import com.tcc.monitorrcp.ui.viewmodel.UiState
-// [MUDANÇA] Import necessário para a Melhoria #4
-import androidx.activity.compose.BackHandler
+import com.tcc.monitorrcp.ui.screens.DataScreen
+import com.tcc.monitorrcp.ui.screens.HistoryScreen
+import com.tcc.monitorrcp.ui.screens.HomeScreen
+import com.tcc.monitorrcp.ui.screens.InstructionsScreen
+import com.tcc.monitorrcp.ui.screens.LoginScreen
+import com.tcc.monitorrcp.ui.screens.SplashScreen
+import com.tcc.monitorrcp.ui.screens.HistoryDetailScreen
 
 class MainActivity : ComponentActivity() {
 
@@ -41,6 +48,11 @@ class MainActivity : ComponentActivity() {
                         onStartClick = { viewModel.onStartTestClick() },
                         onHistoryClick = { viewModel.onNavigateTo(Screen.HistoryScreen) },
                         onInstructionsClick = { viewModel.onNavigateTo(Screen.InstructionsScreen) },
+                        onTestSelected = { test -> viewModel.onSelectTest(test) },
+                        onBackFromDetail = { viewModel.onDeselectTest() },
+                        // [ALTERAÇÃO] Passa a nova função de ordenação
+                        onToggleSortOrder = { viewModel.onToggleSortOrder() },
+                        // ---
                         onBack = { viewModel.onNavigateTo(Screen.HomeScreen) },
                         onSplashScreenTimeout = { viewModel.onSplashScreenTimeout() }
                     )
@@ -58,18 +70,20 @@ fun AppNavigator(
     onHistoryClick: () -> Unit,
     onInstructionsClick: () -> Unit,
     onBack: () -> Unit,
-    onSplashScreenTimeout: () -> Unit
+    onSplashScreenTimeout: () -> Unit,
+    onTestSelected: (TestResult) -> Unit,
+    onBackFromDetail: () -> Unit,
+    // [ALTERAÇÃO] Recebe a nova função
+    onToggleSortOrder: () -> Unit
 ) {
     when (uiState.currentScreen) {
         Screen.SplashScreen -> SplashScreen(onTimeout = onSplashScreenTimeout)
 
         Screen.LoginScreen -> {
-            // "Voltar" da tela de login fecha o app (comportamento padrão)
             LoginScreen(onLogin = onLogin)
         }
 
         Screen.HomeScreen -> {
-            // "Voltar" da tela de início fecha o app (comportamento padrão)
             HomeScreen(
                 name = uiState.userName ?: "",
                 onStartClick = onStartClick,
@@ -79,29 +93,37 @@ fun AppNavigator(
         }
 
         Screen.DataScreen -> {
-            // [MUDANÇA #4] Intercepta o botão "voltar" e navega para a Home
             BackHandler { onBack() }
             DataScreen(
                 result = uiState.lastTestResult,
-                // [MUDANÇA #3] Passa o feedback ao vivo para a tela
                 intermediateFeedback = uiState.intermediateFeedback,
                 onBack = onBack
             )
         }
 
         Screen.HistoryScreen -> {
-            // [MUDANÇA #4] Intercepta o botão "voltar" e navega para a Home
             BackHandler { onBack() }
             HistoryScreen(
                 history = uiState.history,
-                onBack = onBack
+                onBack = onBack,
+                onTestClick = onTestSelected,
+                // [ALTERAÇÃO] Passa o estado e a função para a tela
+                isSortDescending = uiState.isSortDescending,
+                onToggleSortOrder = onToggleSortOrder
             )
         }
 
         Screen.InstructionsScreen -> {
-            // [MUDANÇA #4] Intercepta o botão "voltar" e navega para a Home
             BackHandler { onBack() }
             InstructionsScreen(onBack = onBack)
+        }
+
+        Screen.HistoryDetailScreen -> {
+            BackHandler { onBackFromDetail() }
+            HistoryDetailScreen(
+                test = uiState.selectedTest,
+                onBack = onBackFromDetail
+            )
         }
     }
 }

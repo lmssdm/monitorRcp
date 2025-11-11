@@ -15,7 +15,6 @@ object DataRepository {
     private val _lastTestResult = MutableStateFlow<TestResult?>(null)
     val lastTestResult = _lastTestResult
 
-    // Histórico vindo do banco (Room)
     private var historyDaoInitialized = false
     private lateinit var db: AppDatabase
 
@@ -34,13 +33,17 @@ object DataRepository {
         _lastTestResult.value = result
 
         CoroutineScope(Dispatchers.IO).launch {
+            // [NECESSÁRIO] Guarda todos os campos, incluindo a duration
             val entity = HistoryEntity(
                 timestamp = result.timestamp,
                 medianFrequency = result.medianFrequency,
                 averageDepth = result.averageDepth,
                 totalCompressions = result.totalCompressions,
                 correctFrequencyCount = result.correctFrequencyCount,
-                correctDepthCount = result.correctDepthCount
+                correctDepthCount = result.correctDepthCount,
+                slowFrequencyCount = result.slowFrequencyCount,
+                fastFrequencyCount = result.fastFrequencyCount,
+                durationInMillis = result.durationInMillis
             )
             db.historyDao().insert(entity)
         }

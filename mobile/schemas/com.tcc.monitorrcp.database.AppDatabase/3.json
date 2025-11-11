@@ -1,0 +1,91 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 3,
+    "identityHash": "24dad9e00c3ddd48b26df660edf3ef2e",
+    "entities": [
+      {
+        "tableName": "history_table",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `timestamp` INTEGER NOT NULL, `medianFrequency` REAL NOT NULL, `averageDepth` REAL NOT NULL, `totalCompressions` INTEGER NOT NULL, `correctFrequencyCount` INTEGER NOT NULL, `correctDepthCount` INTEGER NOT NULL, `slowFrequencyCount` INTEGER NOT NULL DEFAULT 0, `fastFrequencyCount` INTEGER NOT NULL DEFAULT 0, `durationInMillis` INTEGER NOT NULL DEFAULT 0)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timestamp",
+            "columnName": "timestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "medianFrequency",
+            "columnName": "medianFrequency",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "averageDepth",
+            "columnName": "averageDepth",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalCompressions",
+            "columnName": "totalCompressions",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "correctFrequencyCount",
+            "columnName": "correctFrequencyCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "correctDepthCount",
+            "columnName": "correctDepthCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "slowFrequencyCount",
+            "columnName": "slowFrequencyCount",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "fastFrequencyCount",
+            "columnName": "fastFrequencyCount",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "durationInMillis",
+            "columnName": "durationInMillis",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '24dad9e00c3ddd48b26df660edf3ef2e')"
+    ]
+  }
+}

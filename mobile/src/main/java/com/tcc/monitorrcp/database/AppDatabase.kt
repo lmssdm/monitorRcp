@@ -5,8 +5,12 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-// @Database define o banco de dados, listando suas tabelas (entities) e a versão.
-@Database(entities = [HistoryEntity::class], version = 1, exportSchema = false)
+@Database(
+    entities = [HistoryEntity::class],
+    version = 3, // [NECESSÁRIO] Versão incrementada para 3
+    exportSchema = true
+    // O bloco 'autoMigrations' foi removido para usar o fallback
+)
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun historyDao(): HistoryDao
@@ -21,7 +25,10 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "rcp_database"
-                ).build()
+                )
+                    // [NECESSÁRIO] O fallback irá apagar a v2 e criar a v3
+                    .fallbackToDestructiveMigration()
+                    .build()
                 INSTANCE = instance
                 instance
             }
