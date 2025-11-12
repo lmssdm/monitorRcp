@@ -48,7 +48,7 @@ import com.tcc.monitorrcp.ui.components.LineChartWithTargetRange
 fun HistoryScreen(
     history: List<TestResult>,
     onBack: () -> Unit,
-    onTestClick: (TestResult) -> Unit,
+    onTestClick: (TestResult, Int) -> Unit, // ALTERAÇÃO AQUI: Assinatura atualizada
     isSortDescending: Boolean,
     onToggleSortOrder: () -> Unit
 ) {
@@ -100,14 +100,13 @@ fun HistoryScreen(
                         targetMax = 120.0,
                         targetColor = Color(0xFF66BB6A).copy(alpha = 0.2f),
                         yAxisLabel = "cpm",
-                        // [CORREÇÃO] Passa 'null' para usar os rótulos padrão (80-140)
                         yAxisLabelsOverride = null
                     )
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Gráfico 2 (Profundidade - placeholder)
+                // Gráfico 2 (Profundidade)
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
@@ -121,7 +120,6 @@ fun HistoryScreen(
                         targetMax = 6.0,
                         targetColor = Color(0xFF66BB6A).copy(alpha = 0.2f),
                         yAxisLabel = "cm",
-                        // [CORREÇÃO] Passa a lista de rótulos de 0 a 10
                         yAxisLabelsOverride = listOf(0.0, 2.0, 5.0, 6.0, 8.0, 10.0)
                     )
                 }
@@ -158,12 +156,14 @@ fun HistoryScreen(
                 AnimatedVisibility(visible = isListExpanded) {
                     Column {
                         history.forEachIndexed { index, result ->
+                            // ALTERAÇÃO AQUI: Calcula o número do teste
+                            val testNumber = if (isSortDescending) history.size - index else index + 1
+
                             HistoryItem(
                                 result = result,
-                                index = index,
-                                totalCount = history.size,
-                                isSortDescending = isSortDescending,
-                                onClick = { onTestClick(result) }
+                                testNumber = testNumber, // Passa o número
+                                // Passa o teste e o número para o clique
+                                onClick = { onTestClick(result, testNumber) }
                             )
                             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                         }

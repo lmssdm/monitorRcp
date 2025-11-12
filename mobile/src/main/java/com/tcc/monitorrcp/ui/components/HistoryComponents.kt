@@ -30,6 +30,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
@@ -46,6 +48,9 @@ import java.util.Locale
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
+// CORREÇÃO: Adicionando as importações de coleção que faltavam
+import kotlin.collections.maxOrNull
+import kotlin.collections.minOrNull
 
 @Composable
 fun LineChartWithTargetRange(
@@ -56,14 +61,13 @@ fun LineChartWithTargetRange(
     targetMax: Double,
     targetColor: Color,
     yAxisLabel: String,
-    // [CORREÇÃO] Adicionado o parâmetro que estava em falta
     yAxisLabelsOverride: List<Double>? = null
 ) {
     val dataPoints = data.takeLast(10).reversed()
 
-    // Usa os rótulos corretos (100-140 para freq, 0-10 para prof)
     val yAxisLabels = yAxisLabelsOverride ?: listOf(targetMin, targetMax, 80.0, 140.0)
 
+    // Estas chamadas agora funcionarão por causa das novas importações
     val dataMin = dataPoints.minOrNull() ?: 0.0
     val dataMax = dataPoints.maxOrNull() ?: 1.0
 
@@ -76,10 +80,11 @@ fun LineChartWithTargetRange(
     val textMeasurer = rememberTextMeasurer()
     val density = LocalDensity.current
 
-    val yAxisPaddingPx = with(density) { 40.dp.toPx() }
-    val xAxisPaddingPx = with(density) { 20.dp.toPx() }
+    val yAxisPaddingPx = with(density) { 50.dp.toPx() }
+    val xAxisPaddingPx = with(density) { 30.dp.toPx() }
 
     val textStyle = TextStyle(fontSize = 12.sp, color = Color.Black)
+    val axisLabelStyle = TextStyle(fontSize = 12.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
     val pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
 
     Column(
@@ -107,6 +112,30 @@ fun LineChartWithTargetRange(
                 return yAxisPaddingPx + (index * (canvasWidth / (dataPoints.size - 1).coerceAtLeast(1)))
             }
 
+            // --- RÓTULO DO EIXO Y (Vertical) ---
+            val yLabelLayoutResult = textMeasurer.measure(
+                text = yAxisLabel,
+                style = axisLabelStyle
+            )
+            drawIntoCanvas { canvas ->
+                canvas.nativeCanvas.save()
+                canvas.nativeCanvas.rotate(
+                    -90f,
+                    yAxisPaddingPx / 4,
+                    canvasHeight / 2
+                )
+                drawText(
+                    textLayoutResult = yLabelLayoutResult,
+                    topLeft = Offset(
+                        x = (canvasHeight / 2) - (yLabelLayoutResult.size.width / 2),
+                        y = (yAxisPaddingPx / 4)
+                    )
+                )
+                canvas.nativeCanvas.restore()
+            }
+            // --- FIM DO RÓTULO DO EIXO Y ---
+
+
             // 1. Desenha a Zona-Alvo (verde)
             val targetTopY = getY(targetMax)
             val targetBottomY = getY(targetMin)
@@ -131,7 +160,7 @@ fun LineChartWithTargetRange(
                 drawText(
                     textLayoutResult = textLayoutResult,
                     topLeft = Offset(
-                        x = (yAxisPaddingPx - textLayoutResult.size.width) / 2,
+                        x = yAxisPaddingPx - textLayoutResult.size.width - (with(density) { 4.dp.toPx() }),
                         y = y - (textLayoutResult.size.height / 2)
                     )
                 )
@@ -166,16 +195,30 @@ fun LineChartWithTargetRange(
             // 4. Desenha o Eixo X
             dataPoints.forEachIndexed { i, _ ->
                 val x = getX(i)
-                val label = (i + 1).toString()
-                val textLayoutResult = textMeasurer.measure(text = label, style = textStyle)
+                val labelText = (i + 1).toString()
+                val textLayoutResult = textMeasurer.measure(text = labelText, style = textStyle)
                 drawText(
                     textLayoutResult = textLayoutResult,
                     topLeft = Offset(
                         x = x - (textLayoutResult.size.width / 2),
-                        y = canvasHeight + (xAxisPaddingPx / 2) - (textLayoutResult.size.height / 2)
+                        y = canvasHeight + (xAxisPaddingPx / 4)
                     )
                 )
             }
+
+            // --- RÓTULO DO EIXO X (Horizontal) ---
+            val xLabelLayoutResult = textMeasurer.measure(
+                text = "Testes (Mais Recentes à Esquerda)",
+                style = axisLabelStyle
+            )
+            drawText(
+                textLayoutResult = xLabelLayoutResult,
+                topLeft = Offset(
+                    x = yAxisPaddingPx + (canvasWidth / 2) - (xLabelLayoutResult.size.width / 2),
+                    y = size.height - (xLabelLayoutResult.size.height)
+                )
+            )
+            // --- FIM DO RÓTULO DO EIXO X ---
         }
 
         // 5. Desenha a Legenda
@@ -213,13 +256,9 @@ private fun LegendItem(color: Color, label: String) {
 @Composable
 fun HistoryItem(
     result: TestResult,
-    index: Int,
-    totalCount: Int,
-    isSortDescending: Boolean,
+    testNumber: Int,
     onClick: () -> Unit
 ) {
-    val testNumber = if (isSortDescending) totalCount - index else index + 1
-
     val date = remember(result.timestamp) {
         SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
             .format(Date(result.timestamp))
@@ -252,15 +291,6 @@ fun HistoryItem(
             HistoryMetricRow("Data:", date)
             HistoryMetricRow("Duração:", result.formattedDuration)
             HistoryMetricRow("Total de Compressões:", "${result.totalCompressions}")
-            HistoryMetricRow("Freq. Mediana:", "%.0f cpm".format(result.medianFrequency))
-
-            val freqPct = if (result.totalCompressions > 0) (result.correctFrequencyCount.toDouble() / result.totalCompressions.toDouble()) * 100.0 else 0.0
-
-            HistoryMetricRow("Freq. Correta:", "${result.correctFrequencyCount} (${"%.1f".format(freqPct)}%)")
-            HistoryMetricRow("Freq. Lenta:", "${result.slowFrequencyCount}")
-            HistoryMetricRow("Freq. Rápida:", "${result.fastFrequencyCount}")
-
-            HistoryMetricRow("Prof. Média:", "%.1f cm".format(result.averageDepth))
         }
     }
 }

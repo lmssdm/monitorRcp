@@ -48,11 +48,10 @@ class MainActivity : ComponentActivity() {
                         onStartClick = { viewModel.onStartTestClick() },
                         onHistoryClick = { viewModel.onNavigateTo(Screen.HistoryScreen) },
                         onInstructionsClick = { viewModel.onNavigateTo(Screen.InstructionsScreen) },
-                        onTestSelected = { test -> viewModel.onSelectTest(test) },
+                        // ALTERAÇÃO AQUI: Atualiza a chamada
+                        onTestSelected = { test, testNumber -> viewModel.onSelectTest(test, testNumber) },
                         onBackFromDetail = { viewModel.onDeselectTest() },
-                        // [ALTERAÇÃO] Passa a nova função de ordenação
                         onToggleSortOrder = { viewModel.onToggleSortOrder() },
-                        // ---
                         onBack = { viewModel.onNavigateTo(Screen.HomeScreen) },
                         onSplashScreenTimeout = { viewModel.onSplashScreenTimeout() }
                     )
@@ -71,9 +70,8 @@ fun AppNavigator(
     onInstructionsClick: () -> Unit,
     onBack: () -> Unit,
     onSplashScreenTimeout: () -> Unit,
-    onTestSelected: (TestResult) -> Unit,
+    onTestSelected: (TestResult, Int) -> Unit, // ALTERAÇÃO AQUI: Assinatura atualizada
     onBackFromDetail: () -> Unit,
-    // [ALTERAÇÃO] Recebe a nova função
     onToggleSortOrder: () -> Unit
 ) {
     when (uiState.currentScreen) {
@@ -106,8 +104,8 @@ fun AppNavigator(
             HistoryScreen(
                 history = uiState.history,
                 onBack = onBack,
-                onTestClick = onTestSelected,
-                // [ALTERAÇÃO] Passa o estado e a função para a tela
+                // ALTERAÇÃO AQUI: Lambda atualizada
+                onTestClick = { test, testNumber -> onTestSelected(test, testNumber) },
                 isSortDescending = uiState.isSortDescending,
                 onToggleSortOrder = onToggleSortOrder
             )
@@ -122,6 +120,7 @@ fun AppNavigator(
             BackHandler { onBackFromDetail() }
             HistoryDetailScreen(
                 test = uiState.selectedTest,
+                testNumber = uiState.selectedTestNumber, // ALTERAÇÃO AQUI: Passa o número
                 onBack = onBackFromDetail
             )
         }

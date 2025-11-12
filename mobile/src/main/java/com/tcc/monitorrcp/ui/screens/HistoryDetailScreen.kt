@@ -14,6 +14,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -36,21 +37,22 @@ import java.util.Locale
 @Composable
 fun HistoryDetailScreen(
     test: TestResult?,
+    testNumber: Int?, // ALTERAÇÃO AQUI: Recebe o número
     onBack: () -> Unit
 ) {
-    val testDate = remember(test?.timestamp) {
-        if (test != null) {
-            SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
-                .format(Date(test.timestamp))
+    // ALTERAÇÃO AQUI: Usa o testNumber para o título
+    val title = remember(testNumber) {
+        if (testNumber != null) {
+            "Detalhes do Teste $testNumber"
         } else {
-            "Detalhes"
+            "Detalhes do Teste"
         }
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Teste de $testDate") },
+                title = { Text(title) }, // Usa o novo título
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar")
@@ -80,7 +82,7 @@ fun HistoryDetailScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
 
-            // --- Card 1: Resumo das Métricas ---
+            // --- Card 1: Resumo das Métricas (EXPANDIDO) ---
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -94,7 +96,18 @@ fun HistoryDetailScreen(
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
-                    // [NECESSÁRIO] Adiciona a Duração ao resumo
+
+                    // Pega a data formatada
+                    val date = remember(test.timestamp) {
+                        SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
+                            .format(Date(test.timestamp))
+                    }
+
+                    // ALTERAÇÃO AQUI: Todas as métricas agora estão aqui
+                    HistoryMetricRow(
+                        label = "Data:",
+                        value = date
+                    )
                     HistoryMetricRow(
                         label = "Duração:",
                         value = test.formattedDuration
@@ -103,9 +116,35 @@ fun HistoryDetailScreen(
                         label = "Total de Compressões:",
                         value = "${test.totalCompressions}"
                     )
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
                     HistoryMetricRow(
                         label = "Frequência Mediana:",
                         value = "%.0f cpm".format(test.medianFrequency)
+                    )
+                    HistoryMetricRow(
+                        label = "Profundidade Média:",
+                        value = "%.1f cm".format(test.averageDepth)
+                    )
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    HistoryMetricRow(
+                        label = "Compressões (Freq. Correta):",
+                        value = "${test.correctFrequencyCount} (${"%.1f".format(test.correctFrequencyPercentage)}%)"
+                    )
+                    HistoryMetricRow(
+                        label = "Compressões (Freq. Lenta):",
+                        value = "${test.slowFrequencyCount}"
+                    )
+                    HistoryMetricRow(
+                        label = "Compressões (Freq. Rápida):",
+                        value = "${test.fastFrequencyCount}"
+                    )
+                    HistoryMetricRow(
+                        label = "Compressões (Prof. Correta):",
+                        value = "${test.correctDepthCount}"
                     )
                 }
             }
@@ -116,6 +155,7 @@ fun HistoryDetailScreen(
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
+                    // Este é o gráfico de barra empilhada
                     FrequencyQualityChart(testResult = test)
                 }
             }
@@ -134,7 +174,8 @@ fun HistoryDetailScreen(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "Métrica de profundidade (5-6 cm) ainda não implementada.",
+                        // Exibe a contagem de profundidade correta (embora o gráfico não esteja pronto)
+                        text = "Compressões Corretas (5-6 cm): ${test.correctDepthCount} de ${test.totalCompressions}",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

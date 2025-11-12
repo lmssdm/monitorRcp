@@ -35,6 +35,7 @@ data class UiState(
     val history: List<TestResult> = emptyList(),
     val errorMessage: String? = null,
     val selectedTest: TestResult? = null,
+    val selectedTestNumber: Int? = null, // ALTERAÇÃO AQUI
     val isSortDescending: Boolean = true
 )
 
@@ -84,8 +85,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val finalDataPoints = signalProcessor.parseData(finalData)
                 fullTestDataList.addAll(finalDataPoints)
 
-                // [CORREÇÃO DO CRASH] Ordena a lista por timestamp ANTES de a enviar
-                // para o processador. Isto garante que a interpolação não falhe.
                 val sortedData = fullTestDataList.sortedBy { it.timestamp }
 
                 processAndSaveFinalData(sortedData)
@@ -175,7 +174,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val (freq, _) = signalProcessor.analyzeChunk(accData)
 
         val newStatus: FeedbackStatus
-        val freqFeedback: String // Feedback visual
+        val freqFeedback: String
 
         when {
             freq == 0.0 -> {
@@ -213,7 +212,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
-        // [CORREÇÃO DO CRASH] Passa a lista já ordenada
         val result = signalProcessor.analyzeFinalData(sortedData, System.currentTimeMillis())
 
         _uiState.update { it.copy(lastTestResult = result, intermediateFeedback = "Teste finalizado!") }
@@ -234,19 +232,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // === Funções de Navegação de Detalhes ===
 
-    fun onSelectTest(test: TestResult) {
+    // ALTERAÇÃO AQUI
+    fun onSelectTest(test: TestResult, testNumber: Int) {
         _uiState.update {
             it.copy(
                 selectedTest = test,
+                selectedTestNumber = testNumber, // Guarda o número do teste
                 currentScreen = Screen.HistoryDetailScreen
             )
         }
     }
 
+    // ALTERAÇÃO AQUI
     fun onDeselectTest() {
         _uiState.update {
             it.copy(
                 selectedTest = null,
+                selectedTestNumber = null, // Limpa o número do teste
                 currentScreen = Screen.HistoryScreen
             )
         }

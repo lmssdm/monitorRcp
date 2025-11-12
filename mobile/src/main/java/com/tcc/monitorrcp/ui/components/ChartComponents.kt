@@ -9,8 +9,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -21,9 +19,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.tcc.monitorrcp.model.TestResult
 import java.util.Locale
+// CORREÇÃO: Importação corrigida de 'kotlin.math' para 'kotlin.collections'
+import kotlin.collections.maxOfOrNull
 
 // Definição das cores que usaremos para o gráfico
 val corLenta = Color(0xFFEF5350) // Vermelho para "Lento"
@@ -41,14 +40,12 @@ private data class ChartSection(
 )
 
 /**
- * O Composable principal do gráfico de barras empilhadas.
- * Ele recebe o resultado do teste e exibe a análise da Frequência.
+ * O Composable principal do gráfico.
+ * Alterado para um gráfico de barras horizontais agrupadas.
  */
 @Composable
 fun FrequencyQualityChart(testResult: TestResult) {
 
-    // [CORREÇÃO] O 'total' para o gráfico deve ser a soma das frequências
-    // (que é 'totalCompressions - 1', pois a primeira compressão não tem frequência)
     val totalFrequencies = (
             testResult.slowFrequencyCount +
                     testResult.correctFrequencyCount +
@@ -76,6 +73,10 @@ fun FrequencyQualityChart(testResult: TestResult) {
         )
     )
 
+    // Encontra a porcentagem máxima para normalizar as barras
+    // Isso garante que a barra mais longa tenha 100% de largura
+    val maxPercentage = sections.maxOfOrNull { it.percentage }?.coerceAtLeast(0.01f) ?: 1f
+
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
             "Análise da Frequência",
@@ -85,41 +86,22 @@ fun FrequencyQualityChart(testResult: TestResult) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // 2. Desenha a Barra Empilhada
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(30.dp)
-                .clip(RoundedCornerShape(8.dp))
-        ) {
+        // 2. Desenha as Barras Agrupadas
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             sections.forEach { section ->
-                if (section.percentage > 0) {
-                    Box(
-                        modifier = Modifier
-                            .weight(section.percentage)
-                            // [CORREÇÃO] O .fillMaxWidth() foi REMOVIDO daqui,
-                            // pois conflitava com o .weight() e causava o bug.
-                            .height(30.dp)
-                            .background(section.color)
-                    )
-                }
-            }
-        }
+                // Calcula a fração da barra em relação à barra mais longa
+                val barFraction = if (maxPercentage > 0) section.percentage / maxPercentage else 0f
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // 3. Desenha a Legenda
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            sections.forEach { section ->
-                LegendItem(
-                    color = section.color,
+                BarItem(
                     label = section.label,
-                    value = String.format(
+                    valueText = String.format(
                         Locale.getDefault(),
                         "%d (%.1f%%)",
                         section.count,
                         section.percentage * 100
-                    )
+                    ),
+                    color = section.color,
+                    fraction = barFraction
                 )
             }
         }
@@ -127,31 +109,52 @@ fun FrequencyQualityChart(testResult: TestResult) {
 }
 
 /**
- * Um item da legenda (ex: "Cor • Lento (<100)   15 (10.5%)")
+ * Um Composable privado para desenhar uma única linha do gráfico de barras horizontal.
+ * Inclui os rótulos e a própria barra.
  */
 @Composable
-private fun LegendItem(color: Color, label: String, value: String) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(12.dp)
-                    .background(color, CircleShape)
-            )
+private fun BarItem(
+    label: String,
+    valueText: String,
+    color: Color,
+    fraction: Float
+) {
+    Column {
+        // Linha para os rótulos (Nome e Valor)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text(
                 text = label,
-                modifier = Modifier.padding(start = 8.dp),
-                fontSize = 14.sp
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = valueText,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        Text(
-            text = value,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 14.sp
-        )
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // Box para a barra (fundo + barra colorida)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(20.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant) // Cor da "trilha"
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(fraction) // Largura proporcional da barra
+                    .height(20.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(color) // Cor da barra
+            )
+        }
     }
 }
