@@ -164,6 +164,18 @@ fun HistoryDetailScreen(
                         label = "Compressões (Recoil Correto):",
                         value = "${test.correctRecoilCount} (${"%.1f".format(test.correctRecoilPercentage)}%)"
                     )
+
+                    // --- [MUDANÇA AQUI] ADICIONADO AS NOVAS MÉTRICAS ---
+                    HistoryMetricRow(
+                        label = "Total de Pausas (>2s):",
+                        value = "${test.interruptionCount}"
+                    )
+                    HistoryMetricRow(
+                        label = "Tempo Total em Pausa:",
+                        // Formata os milissegundos para segundos com uma casa decimal
+                        value = "%.1f s".format(test.totalInterruptionTimeMs / 1000.0)
+                    )
+                    // --- FIM DA MUDANÇA ---
                 }
             }
 
@@ -238,9 +250,20 @@ private fun FeedbackCard(test: TestResult) {
         tips.add("Retorno do Tórax (Recoil): É crucial aliviar totalmente o peso do peito após cada compressão.")
     }
 
+    // --- [MUDANÇA AQUI] ADICIONADO FEEDBACK DE INTERRUPÇÃO ---
+    // A regra de qualidade (em Model.kt) já marca como "Regular" se passar de 10s
+    // Aqui, damos a dica se qualquer pausa longa for detectada.
+    if (test.interruptionCount > 0) {
+        val seconds = (test.totalInterruptionTimeMs / 1000.0)
+        tips.add("Interrupções: Você fez ${test.interruptionCount} pausas longas (totalizando %.1f s). Tente minimizar o tempo sem comprimir.".format(seconds))
+    }
+    // --- FIM DA MUDANÇA ---
+
+
     // Se foi tudo bem
     if (tips.isEmpty() && test.totalCompressions > 0) {
-        tips.add("Excelente trabalho! As suas métricas de frequência, profundidade e recoil estão ótimas.")
+        // [MUDANÇA AQUI] Texto atualizado para incluir "interrupções"
+        tips.add("Excelente trabalho! As suas métricas de frequência, profundidade, recoil e interrupções estão ótimas.")
     }
 
     if (tips.isEmpty()) {

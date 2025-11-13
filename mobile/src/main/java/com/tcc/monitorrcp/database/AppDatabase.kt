@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 
 @Database(
     entities = [HistoryEntity::class],
-    version = 5, // [REFACTOR] Versão incrementada de 4 para 5
+    version = 6, // [REFACTOR] Versão incrementada de 5 para 6
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {

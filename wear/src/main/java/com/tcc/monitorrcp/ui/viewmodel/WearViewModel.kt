@@ -45,6 +45,12 @@ class WearViewModel(application: Application) : AndroidViewModel(application), S
     private var timerJob: Job? = null
     private var chunkSendJob: Job? = null
 
+    // --- [MUDANÇA AQUI] Job para o Metrônomo ---
+    private var metronomeJob: Job? = null
+    // Intervalo para 110 bpm (60000ms / 110 = 545ms)
+    private val METRONOME_INTERVAL_MS = 545L
+    // --- FIM DA MUDANÇA ---
+
     private var lastPeakTime: Long? = null
     private var gravityMagnitude = 9.8f
     private val alpha = 0.8f
@@ -61,6 +67,10 @@ class WearViewModel(application: Application) : AndroidViewModel(application), S
     fun startCapture() {
         timerJob?.cancel()
         chunkSendJob?.cancel()
+        // --- [MUDANÇA AQUI] Cancela o metrônomo anterior ---
+        metronomeJob?.cancel()
+        // --- FIM DA MUDANÇA ---
+
         capturedData.clear()
         capturedData.add("Timestamp,Type,X,Y,Z")
 
@@ -94,11 +104,33 @@ class WearViewModel(application: Application) : AndroidViewModel(application), S
                 }
             }
         }
+
+        // --- [MUDANÇA AQUI] Inicia o metrônomo ---
+        startMetronome()
+        // --- FIM DA MUDANÇA ---
     }
+
+    // --- [MUDANÇA AQUI] Nova função para o metrônomo ---
+    private fun startMetronome() {
+        metronomeJob = viewModelScope.launch {
+            while (isActive) {
+                // Toca a vibração primeiro
+                vibrateShort()
+                // Espera o intervalo
+                delay(METRONOME_INTERVAL_MS)
+            }
+        }
+    }
+
+    // --- FIM DA MUDANÇA ---
 
     fun stopAndSendData() {
         timerJob?.cancel()
         chunkSendJob?.cancel()
+        // --- [MUDANÇA AQUI] Para o metrônomo ao parar ---
+        metronomeJob?.cancel()
+        // --- FIM DA MUDANÇA ---
+
         repository.stopCapture()
 
         if (capturedData.size > 1) {
@@ -178,12 +210,13 @@ class WearViewModel(application: Application) : AndroidViewModel(application), S
                     if (interval > 0) {
                         val frequency = 60_000.0 / interval
                         return when {
+                            // --- [MUDANÇA AQUI] Removida a vibração daqui ---
+                            // O metrônomo agora controla a vibração.
+                            // Manter a vibração aqui faria o relógio vibrar duas vezes.
                             frequency < 100 -> "⚠️ Muito lento (${frequency.toInt()} cpm)"
                             frequency > 120 -> "⚠️ Muito rápido (${frequency.toInt()} cpm)"
-                            else -> {
-                                vibrateShort()
-                                "✅ Ritmo OK (${frequency.toInt()} cpm)"
-                            }
+                            else -> "✅ Ritmo OK (${frequency.toInt()} cpm)"
+                            // --- FIM DA MUDANÇA ---
                         }
                     }
                 }
@@ -214,6 +247,7 @@ class WearViewModel(application: Application) : AndroidViewModel(application), S
         super.onCleared()
         timerJob?.cancel()
         chunkSendJob?.cancel()
+        metronomeJob?.cancel()
         repository.stopCapture()
     }
 }

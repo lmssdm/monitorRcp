@@ -17,7 +17,7 @@ import com.tcc.monitorrcp.model.DateFilter
 import com.tcc.monitorrcp.model.Screen
 import com.tcc.monitorrcp.model.TestQuality
 import com.tcc.monitorrcp.model.TestResult
-import com.tcc.monitorrcp.ui.theme.MonitorRcpTheme
+import com.tcc.monitorrcp.ui.theme.MonitorRcpTheme // Corrigido o nome do Tema
 import com.tcc.monitorrcp.ui.viewmodel.MainViewModel
 import com.tcc.monitorrcp.ui.viewmodel.UiState
 import com.tcc.monitorrcp.ui.screens.DataScreen
@@ -27,6 +27,7 @@ import com.tcc.monitorrcp.ui.screens.InstructionsScreen
 import com.tcc.monitorrcp.ui.screens.LoginScreen
 import com.tcc.monitorrcp.ui.screens.SplashScreen
 import com.tcc.monitorrcp.ui.screens.HistoryDetailScreen
+import com.tcc.monitorrcp.ui.viewmodel.HistoryFilterState // Importa a nova classe
 
 class MainActivity : ComponentActivity() {
 
@@ -38,6 +39,7 @@ class MainActivity : ComponentActivity() {
         DataRepository.initDatabase(applicationContext)
 
         setContent {
+            // [CORREÇÃO] Nome do tema corrigido para MonitorRcpTheme
             MonitorRcpTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -56,35 +58,20 @@ class MainActivity : ComponentActivity() {
                         onBack = { viewModel.onNavigateTo(Screen.HomeScreen) },
                         onSplashScreenTimeout = { viewModel.onSplashScreenTimeout() },
 
-                        // Passa todas as funções do BottomSheet
-                        isFilterSheetVisible = uiState.isFilterSheetVisible,
+                        // [REATORAÇÃO] Passa o objeto de estado do filtro
+                        filterState = uiState.filterState,
+
+                        // Funções de evento de filtro
                         onShowFilterSheet = { viewModel.onShowFilterSheet() },
                         onDismissFilterSheet = { viewModel.onDismissFilterSheet() },
-                        pendingQuality = uiState.pendingQualityFilter,
-
-                        // Passa os callbacks do DatePicker
-                        isDatePickerVisible = uiState.isDatePickerVisible,
+                        onPendingQualityChanged = { viewModel.onPendingQualityFilterChanged(it) },
+                        onPendingDurationMinChanged = { viewModel.onPendingDurationMinChanged(it) },
+                        onPendingDurationMaxChanged = { viewModel.onPendingDurationMaxChanged(it) },
                         onShowDatePicker = { viewModel.onShowDatePicker() },
                         onDismissDatePicker = { viewModel.onDismissDatePicker() },
                         onDateRangeSelected = { start, end -> viewModel.onDateRangeSelected(start, end) },
-
-                        onPendingQualityChanged = { viewModel.onPendingQualityFilterChanged(it) },
-
-                        onApplyFilters = { viewModel.onApplyFilters() },
                         onClearFilters = { viewModel.onClearFilters() },
-                        appliedQualityFilter = uiState.appliedQualityFilter,
-
-                        // Passa os estados e callbacks de Duração (String)
-                        pendingDurationMin = uiState.pendingDurationMinSec,
-                        pendingDurationMax = uiState.pendingDurationMaxSec,
-                        onPendingDurationMinChanged = { viewModel.onPendingDurationMinChanged(it) },
-                        onPendingDurationMaxChanged = { viewModel.onPendingDurationMaxChanged(it) },
-                        appliedDurationFilterMinMs = uiState.appliedDurationFilterMinMs,
-                        appliedDurationFilterMaxMs = uiState.appliedDurationFilterMaxMs,
-
-                        // Passa os estados de data
-                        pendingStartDate = uiState.pendingStartDateMillis,
-                        pendingEndDate = uiState.pendingEndDateMillis,
+                        onApplyFilters = { viewModel.onApplyFilters() },
 
                         // Passa a função de exportar
                         onExport = {
@@ -116,46 +103,33 @@ fun AppNavigator(
     onBackFromDetail: () -> Unit,
     onToggleSortOrder: () -> Unit,
 
-    // Todos os novos parâmetros
-    isFilterSheetVisible: Boolean,
+    // [REATORAÇÃO] Recebe o objeto de estado
+    filterState: HistoryFilterState,
+
+    // Funções de evento
     onShowFilterSheet: () -> Unit,
     onDismissFilterSheet: () -> Unit,
-    pendingQuality: TestQuality,
     onPendingQualityChanged: (TestQuality) -> Unit,
-
-    // Parâmetros do DatePicker
-    isDatePickerVisible: Boolean,
+    onPendingDurationMinChanged: (String) -> Unit,
+    onPendingDurationMaxChanged: (String) -> Unit,
     onShowDatePicker: () -> Unit,
     onDismissDatePicker: () -> Unit,
     onDateRangeSelected: (Long?, Long?) -> Unit,
-
-    onApplyFilters: () -> Unit,
     onClearFilters: ()-> Unit,
-    appliedQualityFilter: TestQuality,
+    onApplyFilters: ()-> Unit,
 
-    // Novos parâmetros de Duração
-    pendingDurationMin: String,
-    pendingDurationMax: String,
-    onPendingDurationMinChanged: (String) -> Unit,
-    onPendingDurationMaxChanged: (String) -> Unit,
-    appliedDurationFilterMinMs: Long,
-    appliedDurationFilterMaxMs: Long,
-
-    // Novos parâmetros de Data
-    pendingStartDate: Long?,
-    pendingEndDate: Long?,
-
-    // Parâmetro de Exportar
     onExport: () -> Unit
 ) {
     when (uiState.currentScreen) {
         Screen.SplashScreen -> SplashScreen(onTimeout = onSplashScreenTimeout)
 
         Screen.LoginScreen -> {
+            // [CORREÇÃO] Chamada corrigida para usar os parâmetros que LoginScreen realmente tem
             LoginScreen(onLogin = onLogin)
         }
 
         Screen.HomeScreen -> {
+            // [CORREÇÃO] Chamada corrigida para usar os parâmetros que HomeScreen realmente tem
             HomeScreen(
                 name = uiState.userName ?: "",
                 onStartClick = onStartClick,
@@ -166,6 +140,7 @@ fun AppNavigator(
 
         Screen.DataScreen -> {
             BackHandler { onBack() }
+            // [CORREÇÃO] Chamada corrigida para usar os parâmetros que DataScreen realmente tem
             DataScreen(
                 result = uiState.lastTestResult,
                 intermediateFeedback = uiState.intermediateFeedback,
@@ -175,6 +150,7 @@ fun AppNavigator(
 
         Screen.HistoryScreen -> {
             BackHandler { onBack() }
+            // [REATORAÇÃO] Chamada para HistoryScreen agora é muito mais limpa
             HistoryScreen(
                 history = uiState.history,
                 onBack = onBack,
@@ -182,31 +158,18 @@ fun AppNavigator(
                 isSortDescending = uiState.isSortDescending,
                 onToggleSortOrder = onToggleSortOrder,
 
-                isFilterSheetVisible = isFilterSheetVisible,
+                // Passa o objeto de estado e os callbacks
+                filterState = filterState,
                 onShowFilterSheet = onShowFilterSheet,
                 onDismissFilterSheet = onDismissFilterSheet,
-
-                pendingQuality = pendingQuality,
                 onPendingQualityChanged = onPendingQualityChanged,
-
-                pendingDurationMin = pendingDurationMin,
-                pendingDurationMax = pendingDurationMax,
                 onPendingDurationMinChanged = onPendingDurationMinChanged,
                 onPendingDurationMaxChanged = onPendingDurationMaxChanged,
-
-                onApplyFilters = onApplyFilters,
-                onClearFilters = onClearFilters,
-
-                appliedQualityFilter = appliedQualityFilter,
-                appliedDurationFilterMinMs = appliedDurationFilterMinMs,
-                appliedDurationFilterMaxMs = appliedDurationFilterMaxMs,
-
-                isDatePickerVisible = isDatePickerVisible,
                 onShowDatePicker = onShowDatePicker,
                 onDismissDatePicker = onDismissDatePicker,
                 onDateRangeSelected = onDateRangeSelected,
-                pendingStartDate = pendingStartDate,
-                pendingEndDate = pendingEndDate
+                onClearFilters = onClearFilters,
+                onApplyFilters = onApplyFilters
             )
         }
 

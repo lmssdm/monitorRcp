@@ -54,8 +54,10 @@ import com.tcc.monitorrcp.ui.components.LineChartWithTargetRange
 import java.util.Locale
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DateRangePicker
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDateRangePickerState
+import com.tcc.monitorrcp.ui.viewmodel.HistoryFilterState // Importa a nova classe
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -66,31 +68,20 @@ fun HistoryScreen(
     isSortDescending: Boolean,
     onToggleSortOrder: () -> Unit,
 
-    isFilterSheetVisible: Boolean,
+    // [REATORAÇÃO] Recebe o objeto de estado único
+    filterState: HistoryFilterState,
+
+    // Funções de evento
     onShowFilterSheet: () -> Unit,
     onDismissFilterSheet: () -> Unit,
-
-    pendingQuality: TestQuality,
-    pendingDurationMin: String,
-    pendingDurationMax: String,
-    pendingStartDate: Long?,
-    pendingEndDate: Long?,
-
     onPendingQualityChanged: (TestQuality) -> Unit,
     onPendingDurationMinChanged: (String) -> Unit,
     onPendingDurationMaxChanged: (String) -> Unit,
-
-    onApplyFilters: () -> Unit,
-    onClearFilters: () -> Unit,
-
-    appliedQualityFilter: TestQuality,
-    appliedDurationFilterMinMs: Long,
-    appliedDurationFilterMaxMs: Long,
-
-    isDatePickerVisible: Boolean,
     onShowDatePicker: () -> Unit,
     onDismissDatePicker: () -> Unit,
-    onDateRangeSelected: (Long?, Long?) -> Unit
+    onDateRangeSelected: (Long?, Long?) -> Unit,
+    onClearFilters: () -> Unit,
+    onApplyFilters: () -> Unit
 ) {
     var isListExpanded by remember { mutableStateOf(true) }
     val rotationAngle by animateFloatAsState(targetValue = if (isListExpanded) 180f else 0f, label = "rotation")
@@ -98,33 +89,13 @@ fun HistoryScreen(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     val datePickerState = rememberDateRangePickerState(
-        initialSelectedStartDateMillis = pendingStartDate,
-        initialSelectedEndDateMillis = pendingEndDate
+        // [REATORAÇÃO] Lê do filterState
+        initialSelectedStartDateMillis = filterState.pendingStartDateMs,
+        initialSelectedEndDateMillis = filterState.pendingEndDateMs
     )
 
-    if (isFilterSheetVisible) {
-        AdvancedFilterSheet(
-            sheetState = sheetState,
-            onDismiss = onDismissFilterSheet,
-
-            pendingQuality = pendingQuality,
-            pendingDurationMin = pendingDurationMin,
-            pendingDurationMax = pendingDurationMax,
-            pendingStartDate = pendingStartDate,
-            pendingEndDate = pendingEndDate,
-
-            onPendingQualityChanged = onPendingQualityChanged,
-            onPendingDurationMinChanged = onPendingDurationMinChanged,
-            onPendingDurationMaxChanged = onPendingDurationMaxChanged,
-
-            onShowDatePicker = onShowDatePicker,
-
-            onApplyFilters = onApplyFilters,
-            onClearFilters = onClearFilters
-        )
-    }
-
-    if (isDatePickerVisible) {
+    // [REATORAÇÃO] Lógica do DatePicker movida para cá
+    if (filterState.isDatePickerVisible) {
         DatePickerDialog(
             onDismissRequest = onDismissDatePicker,
             confirmButton = {
@@ -151,9 +122,32 @@ fun HistoryScreen(
         }
     }
 
+    // [REATORAÇÃO] Lógica do BottomSheet movida para cá
+    if (filterState.isFilterSheetVisible) {
+        ModalBottomSheet(
+            onDismissRequest = onDismissFilterSheet,
+            sheetState = sheetState
+        ) {
+            AdvancedFilterSheet(
+                // Passa o estado e os callbacks
+                filterState = filterState,
+                onPendingQualityChanged = onPendingQualityChanged,
+                onPendingDurationMinChanged = onPendingDurationMinChanged,
+                onPendingDurationMaxChanged = onPendingDurationMaxChanged,
+                onShowDatePicker = onShowDatePicker,
+                onDismissDatePicker = onDismissDatePicker,
+                onDateRangeSelected = onDateRangeSelected,
+                onClearFilters = onClearFilters,
+                onApplyFilters = onApplyFilters
+            )
+        }
+    }
+
 
     Scaffold(
         topBar = {
+            // [CORREÇÃO] Lógica do TopAppBar (que você chamava de HistoryListHeader)
+            // está aqui, como era no seu arquivo original
             TopAppBar(
                 title = { Text("Histórico de Testes") },
                 navigationIcon = {
@@ -171,10 +165,8 @@ fun HistoryScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
-            val areFiltersActive = appliedQualityFilter != TestQuality.TODOS ||
-                    appliedDurationFilterMinMs > 0L ||
-                    appliedDurationFilterMaxMs > 0L ||
-                    pendingStartDate != null
+            // [REATORAÇÃO] Lê a propriedade do filterState
+            val areFiltersActive = filterState.areFiltersActive
 
             if (history.isEmpty() && !areFiltersActive) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -224,7 +216,8 @@ fun HistoryScreen(
                 Text("Evolução dos Testes", style = MaterialTheme.typography.headlineSmall)
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Gráfico 1 (Frequência)
+                // [CORREÇÃO] Lógica do Gráfico (que você chamava de EvolutionChartsCard)
+                // está aqui, como era no seu arquivo original
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
@@ -245,7 +238,6 @@ fun HistoryScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Gráfico 2 (Profundidade)
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
@@ -319,6 +311,7 @@ fun HistoryScreen(
                         } else {
                             history.forEachIndexed { index, result ->
                                 val testNumber = if (isSortDescending) history.size - index else index + 1
+                                // [CORREÇÃO] Corrigido o nome do parâmetro de 'testResult' para 'result'
                                 HistoryItem(
                                     result = result,
                                     testNumber = testNumber,

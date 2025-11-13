@@ -372,9 +372,9 @@ fun LineChartWithTargetRange(
             }
         }
 
-        // [CORREÇÃO DE BUG] Rótulo do Eixo X ADICIONADO AQUI, como um Text Composable
+        // --- [MUDANÇA AQUI] Rótulo do Eixo X alterado ---
         Text(
-            text = "Testes (Mais Recentes à Esquerda)",
+            text = "Testes(Mais Antigo à Esquerda)\"",
             style = axisLabelStyle,
             modifier = Modifier
                 .fillMaxWidth()

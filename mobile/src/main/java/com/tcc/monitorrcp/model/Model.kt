@@ -54,7 +54,12 @@ data class TestResult(
 
     val correctRecoilCount: Int,
 
-    val durationInMillis: Long
+    val durationInMillis: Long,
+
+    // [NOVA MÉTRICA]
+    val interruptionCount: Int,
+    // [NOVA MÉTRICA]
+    val totalInterruptionTimeMs: Long
 ) {
     // Propriedade computada para a contagem de frequência errada
     val wrongFrequencyCount: Int
@@ -101,7 +106,10 @@ data class TestResult(
             val isDepthGood = correctDepthPercentage >= 80.0
             val isRecoilGood = correctRecoilPercentage >= 80.0
 
-            return if (isFreqGood && isDepthGood && isRecoilGood) {
+            // [NOVA MÉTRICA] Pausas longas também tornam o teste "Regular"
+            val hasLongInterruptions = totalInterruptionTimeMs > 10000
+
+            return if (isFreqGood && isDepthGood && isRecoilGood && !hasLongInterruptions) {
                 TestQuality.BOM
             } else {
                 TestQuality.REGULAR

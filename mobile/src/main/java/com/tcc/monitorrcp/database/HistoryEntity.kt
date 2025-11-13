@@ -26,5 +26,13 @@ data class HistoryEntity(
     val correctRecoilCount: Int = 0,
 
     @ColumnInfo(defaultValue = "0")
-    val durationInMillis: Long = 0L
+    val durationInMillis: Long = 0L,
+
+    // [NOVA MÉTRICA]
+    @ColumnInfo(defaultValue = "0")
+    val interruptionCount: Int = 0,
+
+    // [NOVA MÉTRICA]
+    @ColumnInfo(defaultValue = "0")
+    val totalInterruptionTimeMs: Long = 0L
 )

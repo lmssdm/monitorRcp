@@ -54,18 +54,21 @@ object SignalProcessor {
 
         if (accData.isEmpty() || gyrData.isEmpty()) {
             Log.e(TAG, "[FINAL] Dados de Acelerómetro (size=${accData.size}) ou Giroscópio (size=${gyrData.size}) estão vazios. Análise impossível.")
-            return TestResult(timestamp, 0.0, 0.0, 0, 0, 0, 0, 0, 0, 0L)
+            // [NOVA MÉTRICA] Retornar com os novos campos
+            return TestResult(timestamp, 0.0, 0.0, 0, 0, 0, 0, 0, 0, 0L, 0, 0L)
         }
         if (accData.size < 20 || gyrData.size < 20) {
             Log.w(TAG, "[FINAL] Dados insuficientes de ACC (${accData.size}) ou GYR (${gyrData.size}) para análise de profundidade.")
-            return TestResult(timestamp, 0.0, 0.0, 0, 0, 0, 0, 0, 0, 0L)
+            // [NOVA MÉTRICA] Retornar com os novos campos
+            return TestResult(timestamp, 0.0, 0.0, 0, 0, 0, 0, 0, 0, 0L, 0, 0L)
         }
 
         val (commonTimestamps, interpolatedAcc, interpolatedGyr) = interpolateSensorData(accData, gyrData)
 
         if (commonTimestamps.size < 2) {
             Log.w(TAG, "[FINAL] Falha na interpolação (listas não sobrepostas).")
-            return TestResult(timestamp, 0.0, 0.0, 0, 0, 0, 0, 0, 0, 0L)
+            // [NOVA MÉTRICA] Retornar com os novos campos
+            return TestResult(timestamp, 0.0, 0.0, 0, 0, 0, 0, 0, 0, 0L, 0, 0L)
         }
 
         val durationInMillis = commonTimestamps.last() - commonTimestamps.first()
@@ -84,14 +87,14 @@ object SignalProcessor {
         val total = depthPeaks.size
         if (total < 2) {
             Log.w(TAG, "[FINAL] Não foram encontrados picos de profundidade suficientes ($total).")
-            return TestResult(timestamp, 0.0, 0.0, 0, 0, 0, 0, 0, 0, durationInMillis)
+            // [NOVA MÉTRICA] Retornar com os novos campos
+            return TestResult(timestamp, 0.0, 0.0, 0, 0, 0, 0, 0, 0, durationInMillis, 0, 0L)
         }
 
         val freqs = calculateIndividualFrequenciesInterp(commonTimestamps, depthPeaks)
         val medFreq = if (freqs.isNotEmpty()) freqs.median() else 0.0
 
         val depths = depthPeaks.map { depthInCm[it].toDouble() }
-        // [REFACTOR] LÓGICA PRINCIPAL ALTERADA DE .average() PARA .median()
         val medDepth = if (depths.isNotEmpty()) depths.median() else 0.0
 
         val correctFreq = freqs.count { it in 100.0..120.0 }
@@ -118,17 +121,37 @@ object SignalProcessor {
             }
         }
 
+        // --- [NOVA MÉTRICA] LÓGICA DE INTERRUPÇÃO ---
+        var interruptionCount = 0
+        var totalInterruptionTimeMs = 0L
+        // (Definimos uma interrupção como > 2 segundos, o normal é ~0.5s)
+        val INTERRUPTION_THRESHOLD_MS = 2000
+
+        for (i in 0 until depthPeaks.size - 1) {
+            val timeA = commonTimestamps[depthPeaks[i]]
+            val timeB = commonTimestamps[depthPeaks[i + 1]]
+            val deltaT = timeB - timeA
+
+            if (deltaT > INTERRUPTION_THRESHOLD_MS) {
+                interruptionCount++
+                totalInterruptionTimeMs += (deltaT - 500) // Subtrai o tempo "normal" de uma compressão
+            }
+        }
+        // --- FIM DA NOVA LÓGICA ---
+
         return TestResult(
             timestamp = timestamp,
             medianFrequency = medFreq,
-            medianDepth = medDepth.coerceIn(0.0, 15.0), // [REFACTOR] Renomeado
+            medianDepth = medDepth.coerceIn(0.0, 15.0),
             totalCompressions = total,
             correctFrequencyCount = correctFreq,
             slowFrequencyCount = slowFreq,
             fastFrequencyCount = fastFreq,
             correctDepthCount = correctDepth,
             correctRecoilCount = correctRecoil,
-            durationInMillis = durationInMillis
+            durationInMillis = durationInMillis,
+            interruptionCount = interruptionCount, // [NOVA MÉTRICA]
+            totalInterruptionTimeMs = totalInterruptionTimeMs // [NOVA MÉTRICA]
         )
     }
 

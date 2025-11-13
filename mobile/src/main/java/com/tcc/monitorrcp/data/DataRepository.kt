@@ -36,14 +36,16 @@ object DataRepository {
             val entity = HistoryEntity(
                 timestamp = result.timestamp,
                 medianFrequency = result.medianFrequency,
-                medianDepth = result.medianDepth, // [REFACTOR] Renomeado
+                medianDepth = result.medianDepth,
                 totalCompressions = result.totalCompressions,
                 correctFrequencyCount = result.correctFrequencyCount,
                 correctDepthCount = result.correctDepthCount,
                 slowFrequencyCount = result.slowFrequencyCount,
                 fastFrequencyCount = result.fastFrequencyCount,
                 correctRecoilCount = result.correctRecoilCount,
-                durationInMillis = result.durationInMillis
+                durationInMillis = result.durationInMillis,
+                interruptionCount = result.interruptionCount, // [NOVA MÉTRICA]
+                totalInterruptionTimeMs = result.totalInterruptionTimeMs // [NOVA MÉTRICA]
             )
             db.historyDao().insert(entity)
         }
