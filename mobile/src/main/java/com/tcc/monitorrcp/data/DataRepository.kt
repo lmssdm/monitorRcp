@@ -33,16 +33,16 @@ object DataRepository {
         _lastTestResult.value = result
 
         CoroutineScope(Dispatchers.IO).launch {
-            // [NECESSÁRIO] Guarda todos os campos, incluindo a duration
             val entity = HistoryEntity(
                 timestamp = result.timestamp,
                 medianFrequency = result.medianFrequency,
-                averageDepth = result.averageDepth,
+                medianDepth = result.medianDepth, // [REFACTOR] Renomeado
                 totalCompressions = result.totalCompressions,
                 correctFrequencyCount = result.correctFrequencyCount,
                 correctDepthCount = result.correctDepthCount,
                 slowFrequencyCount = result.slowFrequencyCount,
                 fastFrequencyCount = result.fastFrequencyCount,
+                correctRecoilCount = result.correctRecoilCount,
                 durationInMillis = result.durationInMillis
             )
             db.historyDao().insert(entity)

@@ -32,15 +32,25 @@ import com.tcc.monitorrcp.ui.components.HistoryMetricRow
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.IconToggleButton
+import androidx.compose.ui.Alignment
+import com.tcc.monitorrcp.ui.components.PercentageBar
+import com.tcc.monitorrcp.ui.components.corCorreta
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryDetailScreen(
     test: TestResult?,
-    testNumber: Int?, // ALTERAÇÃO AQUI: Recebe o número
-    onBack: () -> Unit
+    testNumber: Int?,
+    onBack: () -> Unit,
+    onExport: () -> Unit
 ) {
-    // ALTERAÇÃO AQUI: Usa o testNumber para o título
     val title = remember(testNumber) {
         if (testNumber != null) {
             "Detalhes do Teste $testNumber"
@@ -52,10 +62,15 @@ fun HistoryDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(title) }, // Usa o novo título
+                title = { Text(title) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = onExport) {
+                        Icon(Icons.Default.Share, contentDescription = "Exportar CSV")
                     }
                 }
             )
@@ -97,13 +112,11 @@ fun HistoryDetailScreen(
                         fontWeight = FontWeight.Bold
                     )
 
-                    // Pega a data formatada
                     val date = remember(test.timestamp) {
                         SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
                             .format(Date(test.timestamp))
                     }
 
-                    // ALTERAÇÃO AQUI: Todas as métricas agora estão aqui
                     HistoryMetricRow(
                         label = "Data:",
                         value = date
@@ -124,8 +137,8 @@ fun HistoryDetailScreen(
                         value = "%.0f cpm".format(test.medianFrequency)
                     )
                     HistoryMetricRow(
-                        label = "Profundidade Média:",
-                        value = "%.1f cm".format(test.averageDepth)
+                        label = "Profundidade Mediana:", // [REFACTOR] Renomeado
+                        value = "%.1f cm".format(test.medianDepth) // [REFACTOR] Renomeado
                     )
 
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
@@ -146,8 +159,16 @@ fun HistoryDetailScreen(
                         label = "Compressões (Prof. Correta):",
                         value = "${test.correctDepthCount}"
                     )
+
+                    HistoryMetricRow(
+                        label = "Compressões (Recoil Correto):",
+                        value = "${test.correctRecoilCount} (${"%.1f".format(test.correctRecoilPercentage)}%)"
+                    )
                 }
             }
+
+            // Card de Diagnóstico e Dicas
+            FeedbackCard(test = test)
 
             // --- Card 2: Gráfico de Frequência ---
             Card(
@@ -155,31 +176,105 @@ fun HistoryDetailScreen(
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    // Este é o gráfico de barra empilhada
                     FrequencyQualityChart(testResult = test)
                 }
             }
 
-            // --- Card 3: Placeholder de Profundidade ---
+            // --- Card 3: Gráficos de Qualidade (Profundidade e Recoil) ---
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
                     Text(
-                        "Análise da Profundidade",
+                        "Análise de Qualidade (Profundidade e Recoil)",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        // Exibe a contagem de profundidade correta (embora o gráfico não esteja pronto)
-                        text = "Compressões Corretas (5-6 cm): ${test.correctDepthCount} de ${test.totalCompressions}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+
+                    PercentageBar(
+                        label = "Qualidade da Profundidade (5-6cm)",
+                        percentage = (test.correctDepthPercentage / 100.0).toFloat(),
+                        color = corCorreta
+                    )
+
+                    PercentageBar(
+                        label = "Qualidade do Retorno (Recoil)",
+                        percentage = (test.correctRecoilPercentage / 100.0).toFloat(),
+                        color = corCorreta
                     )
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Um card que analisa os resultados e dá dicas de melhoria.
+ */
+@Composable
+private fun FeedbackCard(test: TestResult) {
+    val tips = mutableListOf<String>()
+
+    // Analisa a Frequência
+    if (test.correctFrequencyPercentage < 80.0) {
+        if (test.slowFrequencyCount > test.fastFrequencyCount) {
+            tips.add("Ritmo Lento: Tente comprimir mais rápido, seguindo o ritmo de 100-120 cpm.")
+        } else {
+            tips.add("Ritmo Rápido: O ritmo está muito acelerado. Tente diminuir ligeiramente a velocidade.")
+        }
+    }
+
+    // Analisa a Profundidade
+    if (test.correctDepthPercentage < 80.0) {
+        tips.add("Profundidade: Lembre-se de usar o peso do corpo para atingir 5-6 cm de profundidade.")
+    }
+
+    // Analisa o Recoil
+    if (test.correctRecoilPercentage < 80.0) {
+        tips.add("Retorno do Tórax (Recoil): É crucial aliviar totalmente o peso do peito após cada compressão.")
+    }
+
+    // Se foi tudo bem
+    if (tips.isEmpty() && test.totalCompressions > 0) {
+        tips.add("Excelente trabalho! As suas métricas de frequência, profundidade e recoil estão ótimas.")
+    }
+
+    if (tips.isEmpty()) {
+        return
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = "Dicas",
+                    tint = MaterialTheme.colorScheme.onTertiaryContainer
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "Diagnóstico e Dicas",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            tips.forEach { tip ->
+                Text(
+                    text = "• $tip",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
             }
         }
     }

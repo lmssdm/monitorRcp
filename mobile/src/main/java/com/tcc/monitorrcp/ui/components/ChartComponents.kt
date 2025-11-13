@@ -1,5 +1,6 @@
 package com.tcc.monitorrcp.ui.components
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -9,6 +10,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -16,13 +19,30 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.tcc.monitorrcp.model.TestResult
 import java.util.Locale
-// CORREÇÃO: Importação corrigida de 'kotlin.math' para 'kotlin.collections'
+import kotlin.math.floor
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.collections.maxOfOrNull
+import kotlin.collections.minOrNull
 
 // Definição das cores que usaremos para o gráfico
 val corLenta = Color(0xFFEF5350) // Vermelho para "Lento"
@@ -74,7 +94,6 @@ fun FrequencyQualityChart(testResult: TestResult) {
     )
 
     // Encontra a porcentagem máxima para normalizar as barras
-    // Isso garante que a barra mais longa tenha 100% de largura
     val maxPercentage = sections.maxOfOrNull { it.percentage }?.coerceAtLeast(0.01f) ?: 1f
 
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -156,5 +175,240 @@ private fun BarItem(
                     .background(color) // Cor da barra
             )
         }
+    }
+}
+
+/**
+ * Desenha uma barra de porcentagem simples (Gauge) para métricas de qualidade.
+ * @param label Título da métrica (ex: "Qualidade da Profundidade")
+ * @param percentage Valor percentual (0.0f a 1.0f)
+ * @param color Cor da barra
+ */
+@Composable
+fun PercentageBar(
+    label: String,
+    percentage: Float,
+    color: Color
+) {
+    val percentageText = String.format(Locale.getDefault(), "%.1f%%", percentage * 100)
+
+    Column {
+        // Linha para os rótulos (Nome e Valor)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = percentageText,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // Box para a barra (fundo + barra colorida)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(20.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant) // Cor da "trilha"
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(percentage) // Largura proporcional da barra
+                    .height(20.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(color) // Cor da barra
+            )
+        }
+    }
+}
+
+@Composable
+fun LineChartWithTargetRange(
+    data: List<Double>,
+    label: String,
+    lineColor: Color,
+    targetMin: Double,
+    targetMax: Double,
+    targetColor: Color,
+    yAxisLabel: String,
+    yAxisLabelsOverride: List<Double>? = null,
+    yMaxLimit: Double? = null // [MELHORIA UI/UX] Novo parâmetro para "travar" o eixo Y
+) {
+    val dataPoints = data.takeLast(10).reversed()
+
+    val yAxisLabels = yAxisLabelsOverride ?: listOf(targetMin, targetMax, 80.0, 140.0)
+
+    val dataMin = dataPoints.minOrNull() ?: 0.0
+    val dataMax = dataPoints.maxOrNull() ?: 1.0
+
+    val overallMin = floor(min(yAxisLabels.minOrNull() ?: 0.0, dataMin) / 10.0) * 10.0
+
+    // [MELHORIA UI/UX] Usa o yMaxLimit se for fornecido, senão calcula
+    val overallMax = yMaxLimit ?: (max(yAxisLabels.maxOrNull() ?: 0.0, dataMax) / 10.0).let { it + 1 }.toInt() * 10.0
+
+    val range = (overallMax - overallMin).takeIf { it > 0 } ?: 1.0
+
+    val textMeasurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+
+    val yAxisPaddingPx = with(density) { 55.dp.toPx() } // Aumentado para dar espaço para o "cpm"
+    val xAxisPaddingPx = with(density) { 30.dp.toPx() }
+
+    val textStyle = TextStyle(fontSize = 12.sp, color = Color.Black)
+    val axisLabelStyle = TextStyle(fontSize = 12.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+    val pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+    ) {
+        Text(label, style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(200.dp)
+        ) {
+
+            val canvasWidth = size.width - yAxisPaddingPx
+            val canvasHeight = size.height - xAxisPaddingPx
+
+            fun getY(value: Double): Float {
+                // [MELHORIA UI/UX] Trava o valor no limite do gráfico
+                val clampedValue = value.coerceIn(overallMin, overallMax)
+                return (canvasHeight * (1 - ((clampedValue - overallMin) / range))).toFloat()
+            }
+
+            fun getX(index: Int): Float {
+                return yAxisPaddingPx + (index * (canvasWidth / (dataPoints.size - 1).coerceAtLeast(1)))
+            }
+
+            // --- RÓTULO DO EIXO Y (Vertical) ---
+            // (Removido daqui pois "cpm" ou "cm" já estão nos rótulos)
+
+            // 1. Desenha a Zona-Alvo (verde)
+            val targetTopY = getY(targetMax)
+            val targetBottomY = getY(targetMin)
+            drawRect(
+                color = targetColor,
+                topLeft = Offset(yAxisPaddingPx, targetTopY),
+                size = Size(canvasWidth, targetBottomY - targetTopY)
+            )
+
+            // 2. Desenha o Eixo Y (Rótulos e Linhas de Grelha)
+            val relevantLabels = yAxisLabelsOverride?.map { it.toInt() }
+                ?: (overallMin.toInt()..overallMax.toInt() step 20).toMutableList().apply {
+                    addAll(listOf(targetMin.toInt(), targetMax.toInt()))
+                }
+
+            relevantLabels.distinct().sorted().forEach { value ->
+                val y = getY(value.toDouble())
+                // [MELHORIA UI/UX] Adiciona a unidade (ex: "100 cpm")
+                val labelText = "$value $yAxisLabel"
+                val textLayoutResult = textMeasurer.measure(
+                    text = labelText,
+                    style = textStyle
+                )
+                drawText(
+                    textLayoutResult = textLayoutResult,
+                    topLeft = Offset(
+                        x = yAxisPaddingPx - textLayoutResult.size.width - (with(density) { 4.dp.toPx() }),
+                        y = y - (textLayoutResult.size.height / 2)
+                    )
+                )
+                drawLine(
+                    color = Color.Gray,
+                    start = Offset(yAxisPaddingPx, y),
+                    end = Offset(size.width, y),
+                    strokeWidth = 1f,
+                    pathEffect = pathEffect
+                )
+            }
+
+            // 3. Desenha a Linha de Evolução
+            if (dataPoints.size >= 2) {
+                val linePath = Path()
+                dataPoints.forEachIndexed { i, value ->
+                    val x = getX(i)
+                    val y = getY(value)
+                    if (i == 0) {
+                        linePath.moveTo(x, y)
+                    } else {
+                        linePath.lineTo(x, y)
+                    }
+                }
+                drawPath(
+                    path = linePath,
+                    color = lineColor,
+                    style = Stroke(width = 6f)
+                )
+            }
+
+            // 4. Desenha o Eixo X
+            dataPoints.forEachIndexed { i, _ ->
+                val x = getX(i)
+                val labelText = (i + 1).toString()
+                val textLayoutResult = textMeasurer.measure(text = labelText, style = textStyle)
+                drawText(
+                    textLayoutResult = textLayoutResult,
+                    topLeft = Offset(
+                        x = x - (textLayoutResult.size.width / 2),
+                        y = canvasHeight + (xAxisPaddingPx / 4)
+                    )
+                )
+            }
+        }
+
+        // [CORREÇÃO DE BUG] Rótulo do Eixo X ADICIONADO AQUI, como um Text Composable
+        Text(
+            text = "Testes (Mais Recentes à Esquerda)",
+            style = axisLabelStyle,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp),
+            textAlign = TextAlign.Center
+        )
+
+        // 5. Desenha a Legenda
+        Spacer(modifier = Modifier.height(16.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            LegendItem(color = lineColor, label = "Sua Média")
+            Spacer(modifier = Modifier.padding(horizontal = 8.dp))
+            LegendItem(color = targetColor, label = "Zona Alvo ($targetMin-$targetMax $yAxisLabel)")
+        }
+    }
+}
+
+@Composable
+private fun LegendItem(color: Color, label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .size(12.dp)
+                .background(color, CircleShape)
+        )
+        Text(
+            text = label,
+            modifier = Modifier.padding(start = 8.dp),
+            fontSize = 12.sp,
+            color = Color.Gray
+        )
     }
 }

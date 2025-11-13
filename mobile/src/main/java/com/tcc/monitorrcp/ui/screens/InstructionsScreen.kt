@@ -65,11 +65,13 @@ fun InstructionsScreen(onBack: () -> Unit) {
                 imageRes = R.drawable.passo4,
                 title = "Passo 4:",
                 text = "Comprima o tórax a uma profundidade de 5 a 6 centímetros."
+                // [ALTERAÇÃO] highlightText removido
             ),
             InstructionStepData(
                 imageRes = R.drawable.passo5,
                 title = "Passo 5:",
                 text = "Mantenha um ritmo de 100 a 120 compressões por minuto."
+                // [ALTERAÇÃO] highlightText removido
             ),
             InstructionStepData(
                 imageRes = R.drawable.passo6,
@@ -115,7 +117,8 @@ fun InstructionsScreen(onBack: () -> Unit) {
                     Modifier
                         .height(50.dp) // <-- Este Row tem 50.dp de altura
                         .fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically // [MELHORIA UI/UX] Centraliza os pontos
                 ) {
                     repeat(steps.size) { iteration ->
                         val color = if (pagerState.currentPage == iteration) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)

@@ -15,15 +15,17 @@ import kotlin.math.sqrt
 
 object SignalProcessor {
 
-    // [CORREÇÃO BUG 0 CPM] Limiar Fixo (APENAS para chunks de 5s)
-    // Reduzido para 2.0f para ser mais sensível no feedback em tempo real
-    private const val CHUNK_FIXED_THRESHOLD = 2.0f
+    private const val TAG = "SignalProcessor"
 
     // [CALIBRAÇÃO] Fator de sensibilidade (APENAS para análise final)
-    // Definido como 7.5 para ser menos sensível (corrigir sobre-contagem)
     private const val FINAL_ADAPTIVE_SENSITIVITY_FACTOR = 7.5
 
     fun analyzeChunk(accData: List<SensorDataPoint>): Pair<Double, Double> {
+        if (accData.isEmpty()) {
+            Log.w(TAG, "[CHUNK] accData está vazio, impossível analisar.")
+            return 0.0 to 0.0
+        }
+
         val duration = (accData.last().timestamp - accData.first().timestamp) / 1000.0
         if (duration <= 0) return 0.0 to 0.0
         val fs = accData.size / duration
@@ -33,8 +35,10 @@ object SignalProcessor {
         val butterworth = ButterworthFilter(cutoffFrequency = 0.5, sampleRate = fs, isHighPass = true)
         val filtered = butterworth.apply(removeMeanDrift(mags))
 
-        // [CORREÇÃO BUG 0 CPM] Usa o limiar fixo mais baixo para o chunk
-        val peaks = findPeaksWithProminence(filtered, CHUNK_FIXED_THRESHOLD, (fs * 0.35).toInt())
+        val filteredFloatList = filtered.map { it.toFloat() }
+        val adaptiveThreshold = calculateAdaptiveThreshold(filteredFloatList) * 2.0
+
+        val peaks = findPeaksWithProminence(filtered, adaptiveThreshold.toFloat(), (fs * 0.35).toInt())
         val freqs = calculateIndividualFrequencies(accData, peaks)
 
         val medFreq = if (freqs.isNotEmpty()) freqs.median() else 0.0
@@ -43,39 +47,35 @@ object SignalProcessor {
         return medFreq to avgDepth
     }
 
-    // A análise final usa o Limiar Adaptativo (MAD)
     fun analyzeFinalData(allData: List<SensorDataPoint>, timestamp: Long): TestResult {
 
         val accData = allData.filter { it.type == "ACC" }
         val gyrData = allData.filter { it.type == "GYR" }
 
-        // [CORREÇÃO DO CRASH] Verificação de segurança
+        if (accData.isEmpty() || gyrData.isEmpty()) {
+            Log.e(TAG, "[FINAL] Dados de Acelerómetro (size=${accData.size}) ou Giroscópio (size=${gyrData.size}) estão vazios. Análise impossível.")
+            return TestResult(timestamp, 0.0, 0.0, 0, 0, 0, 0, 0, 0, 0L)
+        }
         if (accData.size < 20 || gyrData.size < 20) {
-            Log.w("SignalProcessor", "Dados insuficientes de ACC (${accData.size}) ou GYR (${gyrData.size}) para análise de profundidade.")
-            return TestResult(timestamp, 0.0, 0.0, 0, 0, 0, 0, 0, 0L)
+            Log.w(TAG, "[FINAL] Dados insuficientes de ACC (${accData.size}) ou GYR (${gyrData.size}) para análise de profundidade.")
+            return TestResult(timestamp, 0.0, 0.0, 0, 0, 0, 0, 0, 0, 0L)
         }
 
-        // [PASSO 1] Interpola os dados
         val (commonTimestamps, interpolatedAcc, interpolatedGyr) = interpolateSensorData(accData, gyrData)
 
-        // [CORREÇÃO DO CRASH] Verificação de segurança
         if (commonTimestamps.size < 2) {
-            Log.w("SignalProcessor", "Falha na interpolação (listas não sobrepostas).")
-            return TestResult(timestamp, 0.0, 0.0, 0, 0, 0, 0, 0, 0L)
+            Log.w(TAG, "[FINAL] Falha na interpolação (listas não sobrepostas).")
+            return TestResult(timestamp, 0.0, 0.0, 0, 0, 0, 0, 0, 0, 0L)
         }
 
         val durationInMillis = commonTimestamps.last() - commonTimestamps.first()
         val fs = commonTimestamps.size / (durationInMillis / 1000.0)
 
-        // [PASSO 2] Fusão de Sensores
         val linearAcceleration = complementaryFilter(interpolatedAcc, interpolatedGyr, fs)
 
-        // [PASSO 3] Integração Dupla
         val depthSignal = doubleIntegrate(linearAcceleration, fs)
 
-        // [PASSO 4] Análise de Picos (Lógica Robusta na Profundidade)
-        // A contagem agora é feita no sinal de PROFUNDIDADE, não na aceleração.
-        val minPeakHeightCm = 1.5 // Profundidade mínima (1.5 cm)
+        val minPeakHeightCm = 1.5
         val minPeakDist = fs * 0.3
 
         val depthInCm = depthSignal.map { it * 100 }
@@ -83,16 +83,16 @@ object SignalProcessor {
 
         val total = depthPeaks.size
         if (total < 2) {
-            Log.w("SignalProcessor", "Não foram encontrados picos de profundidade suficientes.")
-            return TestResult(timestamp, 0.0, 0.0, 0, 0, 0, 0, 0, durationInMillis)
+            Log.w(TAG, "[FINAL] Não foram encontrados picos de profundidade suficientes ($total).")
+            return TestResult(timestamp, 0.0, 0.0, 0, 0, 0, 0, 0, 0, durationInMillis)
         }
 
-        // [PASSO 5] Calcular Métricas Finais
         val freqs = calculateIndividualFrequenciesInterp(commonTimestamps, depthPeaks)
         val medFreq = if (freqs.isNotEmpty()) freqs.median() else 0.0
 
         val depths = depthPeaks.map { depthInCm[it].toDouble() }
-        val avgDepth = depths.average().coerceIn(0.0, 15.0)
+        // [REFACTOR] LÓGICA PRINCIPAL ALTERADA DE .average() PARA .median()
+        val medDepth = if (depths.isNotEmpty()) depths.median() else 0.0
 
         val correctFreq = freqs.count { it in 100.0..120.0 }
         val slowFreq = freqs.count { it < 100.0 }
@@ -100,15 +100,34 @@ object SignalProcessor {
 
         val correctDepth = depths.count { it in 5.0..6.0 }
 
+        var correctRecoil = 0
+        val RECOIL_MAX_DEVIATION_CM = 0.5
+
+        for (i in 0 until depthPeaks.size) {
+            val peakIndex = depthPeaks[i]
+            val searchWindowStart = peakIndex
+            val searchWindowEnd = if (i + 1 < depthPeaks.size) depthPeaks[i + 1] else depthInCm.size - 1
+
+            if (searchWindowStart >= searchWindowEnd) continue
+
+            val recoilWindow = depthInCm.subList(searchWindowStart, searchWindowEnd)
+            val minRecoil = recoilWindow.minOrNull() ?: Float.MAX_VALUE
+
+            if (abs(minRecoil) <= RECOIL_MAX_DEVIATION_CM) {
+                correctRecoil++
+            }
+        }
+
         return TestResult(
             timestamp = timestamp,
             medianFrequency = medFreq,
-            averageDepth = avgDepth,
+            medianDepth = medDepth.coerceIn(0.0, 15.0), // [REFACTOR] Renomeado
             totalCompressions = total,
             correctFrequencyCount = correctFreq,
             slowFrequencyCount = slowFreq,
             fastFrequencyCount = fastFreq,
             correctDepthCount = correctDepth,
+            correctRecoilCount = correctRecoil,
             durationInMillis = durationInMillis
         )
     }
@@ -119,22 +138,21 @@ object SignalProcessor {
         gyrData: List<SensorDataPoint>
     ): Triple<List<Long>, List<FloatArray>, List<FloatArray>> {
 
-        // [CORREÇÃO DO CRASH] Adicionada verificação de segurança
-        if (accData.isEmpty() || gyrData.isEmpty()) {
-            return Triple(emptyList(), emptyList(), emptyList())
-        }
-
         val startTime = max(accData.first().timestamp, gyrData.first().timestamp)
         val endTime = min(accData.last().timestamp, gyrData.last().timestamp)
 
         if (startTime >= endTime) {
+            Log.w(TAG, "[INTERPOLATE] StartTime ($startTime) é maior ou igual a EndTime ($endTime).")
             return Triple(emptyList(), emptyList(), emptyList())
         }
 
-        // [CORREÇÃO DO CRASH] Adiciona .distinctBy { it.timestamp }
-        // para remover duplicados antes de interpolar.
         val cleanAccData = accData.sortedBy { it.timestamp }.distinctBy { it.timestamp }
         val cleanGyrData = gyrData.sortedBy { it.timestamp }.distinctBy { it.timestamp }
+
+        if (cleanAccData.size < 5 || cleanGyrData.size < 5) {
+            Log.w(TAG, "[INTERPOLATE] Dados insuficientes para Spline (Acc: ${cleanAccData.size}, Gyr: ${cleanGyrData.size}).")
+            return Triple(emptyList(), emptyList(), emptyList())
+        }
 
         val accTimestamps = cleanAccData.map { it.timestamp.toDouble() }.toDoubleArray()
         val gyrTimestamps = cleanGyrData.map { it.timestamp.toDouble() }.toDoubleArray()
@@ -230,7 +248,10 @@ object SignalProcessor {
             try {
                 val p = it.split(",")
                 if (p.size >= 5) SensorDataPoint(p[0].toLong(), p[1], p[2].toFloat(), p[3].toFloat(), p[4].toFloat()) else null
-            } catch (_: Exception) { null }
+            } catch (e: Exception) {
+                Log.w(TAG, "Falha ao analisar a linha de dados: $it", e)
+                null
+            }
         }
 
     // --- FUNÇÕES MATEMÁTICAS PRIVADAS ---

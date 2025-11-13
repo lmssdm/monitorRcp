@@ -11,7 +11,7 @@ data class HistoryEntity(
 
     val timestamp: Long,
     val medianFrequency: Double,
-    val averageDepth: Double,
+    val medianDepth: Double, // [REFACTOR] Renomeado de averageDepth
     val totalCompressions: Int,
     val correctFrequencyCount: Int,
     val correctDepthCount: Int,
@@ -22,7 +22,9 @@ data class HistoryEntity(
     @ColumnInfo(defaultValue = "0")
     val fastFrequencyCount: Int = 0,
 
-    // [NECESSÁRIO] Nova coluna para a Duração
+    @ColumnInfo(defaultValue = "0")
+    val correctRecoilCount: Int = 0,
+
     @ColumnInfo(defaultValue = "0")
     val durationInMillis: Long = 0L
 )

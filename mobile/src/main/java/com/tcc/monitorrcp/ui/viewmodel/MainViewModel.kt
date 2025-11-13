@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
 import android.util.Log
+import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.tcc.monitorrcp.analysis.SignalProcessor
@@ -14,8 +15,10 @@ import com.tcc.monitorrcp.audio.AudioFeedbackManager
 import com.tcc.monitorrcp.audio.FeedbackStatus
 import com.tcc.monitorrcp.ListenerService
 import com.tcc.monitorrcp.data.DataRepository
+import com.tcc.monitorrcp.model.DateFilter
 import com.tcc.monitorrcp.model.Screen
 import com.tcc.monitorrcp.model.SensorDataPoint
+import com.tcc.monitorrcp.model.TestQuality
 import com.tcc.monitorrcp.model.TestResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,6 +26,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
+import java.util.Calendar
 import kotlin.math.roundToInt
 
 
@@ -35,8 +40,24 @@ data class UiState(
     val history: List<TestResult> = emptyList(),
     val errorMessage: String? = null,
     val selectedTest: TestResult? = null,
-    val selectedTestNumber: Int? = null, // ALTERAÇÃO AQUI
-    val isSortDescending: Boolean = true
+    val selectedTestNumber: Int? = null,
+    val isSortDescending: Boolean = true,
+
+    val isFilterSheetVisible: Boolean = false,
+
+    val appliedQualityFilter: TestQuality = TestQuality.TODOS,
+    val appliedDurationFilterMinMs: Long = 0L,
+    val appliedDurationFilterMaxMs: Long = 0L,
+    val appliedStartDateMillis: Long? = null,
+    val appliedEndDateMillis: Long? = null,
+
+    val pendingQualityFilter: TestQuality = TestQuality.TODOS,
+    val pendingDurationMinSec: String = "",
+    val pendingDurationMaxSec: String = "",
+    val pendingStartDateMillis: Long? = null,
+    val pendingEndDateMillis: Long? = null,
+
+    val isDatePickerVisible: Boolean = false
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -50,11 +71,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val fullTestDataList = mutableListOf<SensorDataPoint>()
 
+    private var fullHistoryList = listOf<TestResult>()
+
     private val dataChunkReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-
             val currentScreen = _uiState.value.currentScreen
-            if (currentScreen != Screen.DataScreen && currentScreen != Screen.HomeScreen) {
+            if (currentScreen != Screen.DataScreen) {
                 Log.w("RCP_DEBUG", "Dados de chunk recebidos na tela $currentScreen, ignorando.")
                 return
             }
@@ -72,9 +94,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val finalDataReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-
             val currentScreen = _uiState.value.currentScreen
-            if (currentScreen != Screen.DataScreen && currentScreen != Screen.HomeScreen) {
+            if (currentScreen != Screen.DataScreen) {
                 Log.w("RCP_DEBUG", "Dados FINAIS recebidos na tela $currentScreen, ignorando.")
                 return
             }
@@ -96,29 +117,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         dataRepository.initDatabase(getApplication())
         viewModelScope.launch(Dispatchers.IO) {
             dataRepository.getHistoryFlow().collectLatest { entities ->
-                val historyList = entities.map {
+                fullHistoryList = entities.map {
                     TestResult(
                         timestamp = it.timestamp,
                         medianFrequency = it.medianFrequency,
-                        averageDepth = it.averageDepth,
+                        medianDepth = it.medianDepth, // [REFACTOR] Renomeado
                         totalCompressions = it.totalCompressions,
                         correctFrequencyCount = it.correctFrequencyCount,
                         correctDepthCount = it.correctDepthCount,
                         slowFrequencyCount = it.slowFrequencyCount,
                         fastFrequencyCount = it.fastFrequencyCount,
+                        correctRecoilCount = it.correctRecoilCount,
                         durationInMillis = it.durationInMillis
                     )
                 }
-
-                _uiState.update {
-                    it.copy(
-                        history = if (it.isSortDescending) {
-                            historyList
-                        } else {
-                            historyList.reversed()
-                        }
-                    )
-                }
+                applyHistoryFilters()
             }
         }
 
@@ -157,16 +170,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         fullTestDataList.clear()
     }
 
-    fun onNavigateTo(screen: Screen) { _uiState.update { it.copy(currentScreen = screen) } }
+    fun onNavigateTo(screen: Screen) {
+        if (_uiState.value.currentScreen == Screen.DataScreen && screen != Screen.DataScreen) {
+            audioManager.stopAndReset()
+            Log.d("RCP_DEBUG", "Saindo da DataScreen. Parando áudio e resetando.")
+            fullTestDataList.clear()
+        }
+        _uiState.update { it.copy(currentScreen = screen) }
+    }
     fun onSplashScreenTimeout() {
         if (_uiState.value.currentScreen == Screen.SplashScreen) {
             _uiState.update { it.copy(currentScreen = Screen.LoginScreen) }
         }
     }
-    fun dismissError() { _uiState.update { it.copy(errorMessage = null) } }
+    fun dismissError() {
+        _uiState.update { it.copy(errorMessage = null) }
+    }
 
     // === Análise Rápida (Chunks) ===
-
     private fun analyzeChunkAndProvideFeedback(dataPoints: List<SensorDataPoint>) {
         val accData = dataPoints.filter { it.type == "ACC" }
         if (accData.size < 5) return
@@ -203,7 +224,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // === Análise Final (Precisa) ===
-
     private fun processAndSaveFinalData(sortedData: List<SensorDataPoint>) {
         audioManager.stopAndReset()
 
@@ -231,25 +251,70 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // === Funções de Navegação de Detalhes ===
-
-    // ALTERAÇÃO AQUI
     fun onSelectTest(test: TestResult, testNumber: Int) {
         _uiState.update {
             it.copy(
                 selectedTest = test,
-                selectedTestNumber = testNumber, // Guarda o número do teste
+                selectedTestNumber = testNumber,
                 currentScreen = Screen.HistoryDetailScreen
             )
         }
     }
 
-    // ALTERAÇÃO AQUI
     fun onDeselectTest() {
         _uiState.update {
             it.copy(
                 selectedTest = null,
-                selectedTestNumber = null, // Limpa o número do teste
+                selectedTestNumber = null,
                 currentScreen = Screen.HistoryScreen
+            )
+        }
+    }
+
+    // === Lógica de Filtros Avançados ===
+
+    private fun applyHistoryFilters() {
+        _uiState.update { state ->
+            // 1. Filtra por Qualidade
+            val qualityFilteredList = when (state.appliedQualityFilter) {
+                TestQuality.TODOS -> fullHistoryList
+                TestQuality.BOM -> fullHistoryList.filter { it.quality == TestQuality.BOM }
+                TestQuality.REGULAR -> fullHistoryList.filter { it.quality == TestQuality.REGULAR }
+            }
+
+            // 2. Filtra por Duração MÍNIMA
+            val durationMinMs = state.appliedDurationFilterMinMs
+            val durationMinFilteredList = if (durationMinMs > 0L) {
+                qualityFilteredList.filter { it.durationInMillis >= durationMinMs }
+            } else {
+                qualityFilteredList
+            }
+
+            // 3. Filtra por Duração MÁXIMA
+            val durationMaxMs = state.appliedDurationFilterMaxMs
+            val durationMaxFilteredList = if (durationMaxMs > 0L) {
+                durationMinFilteredList.filter { it.durationInMillis <= durationMaxMs }
+            } else {
+                durationMinFilteredList
+            }
+
+            // 4. Filtra por Data
+            val startDate = state.appliedStartDateMillis
+            val endDate = state.appliedEndDateMillis
+            val dateFilteredList = if (startDate != null && endDate != null) {
+                val adjustedEndDate = endDate + (24 * 60 * 60 * 1000)
+                durationMaxFilteredList.filter { it.timestamp in startDate..adjustedEndDate }
+            } else {
+                durationMaxFilteredList
+            }
+
+            // 5. Aplica a ordenação
+            state.copy(
+                history = if (state.isSortDescending) {
+                    dateFilteredList
+                } else {
+                    dateFilteredList.reversed()
+                }
             )
         }
     }
@@ -260,6 +325,143 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 isSortDescending = !it.isSortDescending,
                 history = it.history.reversed()
             )
+        }
+    }
+
+    // Funções chamadas pelo BottomSheet
+    fun onShowFilterSheet() {
+        _uiState.update {
+            it.copy(
+                isFilterSheetVisible = true,
+                pendingQualityFilter = it.appliedQualityFilter,
+                pendingStartDateMillis = it.appliedStartDateMillis,
+                pendingEndDateMillis = it.appliedEndDateMillis,
+                pendingDurationMinSec = (it.appliedDurationFilterMinMs / 1000).toString().takeIf { it != "0" } ?: "",
+                pendingDurationMaxSec = (it.appliedDurationFilterMaxMs / 1000).toString().takeIf { it != "0" } ?: ""
+            )
+        }
+    }
+
+    fun onDismissFilterSheet() {
+        _uiState.update { it.copy(isFilterSheetVisible = false) }
+    }
+
+    fun onPendingQualityFilterChanged(newFilter: TestQuality) {
+        _uiState.update { it.copy(pendingQualityFilter = newFilter) }
+    }
+
+    fun onPendingDurationMinChanged(newDuration: String) {
+        if (newDuration.all { it.isDigit() }) {
+            _uiState.update { it.copy(pendingDurationMinSec = newDuration) }
+        }
+    }
+
+    fun onPendingDurationMaxChanged(newDuration: String) {
+        if (newDuration.all { it.isDigit() }) {
+            _uiState.update { it.copy(pendingDurationMaxSec = newDuration) }
+        }
+    }
+
+    fun onShowDatePicker() {
+        _uiState.update { it.copy(isDatePickerVisible = true) }
+    }
+
+    fun onDismissDatePicker() {
+        _uiState.update { it.copy(isDatePickerVisible = false) }
+    }
+
+    fun onDateRangeSelected(startMillis: Long?, endMillis: Long?) {
+        _uiState.update {
+            it.copy(
+                pendingStartDateMillis = startMillis,
+                pendingEndDateMillis = endMillis,
+                isDatePickerVisible = false
+            )
+        }
+    }
+
+    // Chamado pelo botão "Limpar"
+    fun onClearFilters() {
+        _uiState.update {
+            it.copy(
+                pendingQualityFilter = TestQuality.TODOS,
+                pendingDurationMinSec = "",
+                pendingDurationMaxSec = "",
+                pendingStartDateMillis = null,
+                pendingEndDateMillis = null,
+                appliedQualityFilter = TestQuality.TODOS,
+                appliedDurationFilterMinMs = 0L,
+                appliedDurationFilterMaxMs = 0L,
+                appliedStartDateMillis = null,
+                appliedEndDateMillis = null,
+                isFilterSheetVisible = false
+            )
+        }
+        applyHistoryFilters()
+    }
+
+    // Chamado pelo botão "Aplicar"
+    fun onApplyFilters() {
+        _uiState.update {
+            val minMs = (it.pendingDurationMinSec.toLongOrNull() ?: 0L) * 1000
+            val maxMs = (it.pendingDurationMaxSec.toLongOrNull() ?: 0L) * 1000
+
+            it.copy(
+                appliedQualityFilter = it.pendingQualityFilter,
+                appliedDurationFilterMinMs = minMs,
+                appliedDurationFilterMaxMs = maxMs,
+                appliedStartDateMillis = it.pendingStartDateMillis,
+                appliedEndDateMillis = it.pendingEndDateMillis,
+                isFilterSheetVisible = false
+            )
+        }
+        applyHistoryFilters()
+    }
+
+    fun exportTestResult(context: Context, testResult: TestResult, testNumber: Int) {
+        val csvContent = buildString {
+            appendLine("Metrica,Valor")
+            appendLine("Teste Numero,$testNumber")
+            appendLine("Timestamp,${testResult.timestamp}")
+            appendLine("Duracao (formatada),${testResult.formattedDuration}")
+            appendLine("Duracao (ms),${testResult.durationInMillis}")
+            appendLine("Total Compressoes,${testResult.totalCompressions}")
+            appendLine("Frequencia Mediana (cpm),${testResult.medianFrequency}")
+            appendLine("Profundidade Mediana (cm),${testResult.medianDepth}") // [REFACTOR] Renomeado
+            appendLine("Compressoes Freq Correta,${testResult.correctFrequencyCount}")
+            appendLine("Compressoes Freq Lenta,${testResult.slowFrequencyCount}")
+            appendLine("Compressoes Freq Rapida,${testResult.fastFrequencyCount}")
+            appendLine("Compressoes Prof Correta,${testResult.correctDepthCount}")
+            appendLine("Compressoes Recoil Correto,${testResult.correctRecoilCount}")
+        }
+
+        try {
+            val cacheDir = File(context.cacheDir, "exports")
+            cacheDir.mkdirs()
+
+            val file = File(cacheDir, "RCP_Teste_$testNumber.csv")
+            file.writeText(csvContent)
+
+            val fileUri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.provider",
+                file
+            )
+
+            val shareIntent = Intent().apply {
+                action = Intent.ACTION_SEND
+                putExtra(Intent.EXTRA_STREAM, fileUri)
+                type = "text/csv"
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+
+            val chooserIntent = Intent.createChooser(shareIntent, "Exportar Relatório CSV")
+            chooserIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(chooserIntent)
+
+        } catch (e: Exception) {
+            Log.e("MainViewModel", "Falha ao exportar CSV", e)
+            _uiState.update { it.copy(errorMessage = "Falha ao exportar ficheiro: ${e.message}") }
         }
     }
 }

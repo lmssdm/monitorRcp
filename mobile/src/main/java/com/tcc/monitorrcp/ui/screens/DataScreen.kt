@@ -38,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -56,9 +57,9 @@ fun DataScreen(
     onBack: () -> Unit
 ) {
     val feedbackColor = when {
-        intermediateFeedback.contains("✅") -> Color(0xFF66BB6A) // Verde mais forte
-        intermediateFeedback.contains("⚠️") -> Color(0xFFFFEE58) // Amarelo mais forte
-        else -> MaterialTheme.colorScheme.surface // Cor Padrão
+        intermediateFeedback.contains("✅") -> Color(0xFF66BB6A)
+        intermediateFeedback.contains("⚠️") -> Color(0xFFFFEE58)
+        else -> MaterialTheme.colorScheme.surface
     }
 
     val contentColor = when {
@@ -106,8 +107,8 @@ fun DataScreen(
                             modifier = Modifier.weight(1f)
                         )
                         ResultMetric(
-                            label = "Profundidade Média",
-                            value = "%.1f".format(result.averageDepth),
+                            label = "Profundidade Mediana", // [REFACTOR] Renomeado
+                            value = "%.1f".format(result.medianDepth), // [REFACTOR] Renomeado
                             unit = "cm",
                             modifier = Modifier.weight(1f)
                         )
@@ -125,7 +126,6 @@ fun DataScreen(
                             )
                             Spacer(modifier = Modifier.height(12.dp))
 
-                            // [CORREÇÃO] Adicionada a Duração do Teste
                             QualityRow("Duração do Teste:", result.formattedDuration)
                             QualityRow("Total de Compressões:", "${result.totalCompressions}")
 
@@ -133,6 +133,7 @@ fun DataScreen(
 
                             QualityRow("Compressões (Freq. Correta):", "${result.correctFrequencyCount} de ${result.totalCompressions}")
                             QualityRow("Compressões (Prof. Correta):", "${result.correctDepthCount} de ${result.totalCompressions}")
+                            QualityRow("Compressões (Recoil Correto):", "${result.correctRecoilCount} de ${result.totalCompressions}")
                         }
                     }
 
@@ -156,13 +157,13 @@ fun DataScreen(
                             label = "pulse-scale"
                         )
 
-                        Icon(
-                            imageVector = Icons.Default.PlayCircleFilled,
+                        Image(
+                            painter = painterResource(id = R.drawable.logo_rcp),
                             contentDescription = "Testando",
                             modifier = Modifier
                                 .size(120.dp)
                                 .scale(scale),
-                            tint = contentColor
+                            colorFilter = ColorFilter.tint(contentColor)
                         )
                         Spacer(modifier = Modifier.height(32.dp))
 

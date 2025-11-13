@@ -7,9 +7,8 @@ import androidx.room.RoomDatabase
 
 @Database(
     entities = [HistoryEntity::class],
-    version = 3, // [NECESSÁRIO] Versão incrementada para 3
+    version = 5, // [REFACTOR] Versão incrementada de 4 para 5
     exportSchema = true
-    // O bloco 'autoMigrations' foi removido para usar o fallback
 )
 abstract class AppDatabase : RoomDatabase() {
 
@@ -26,7 +25,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "rcp_database"
                 )
-                    // [NECESSÁRIO] O fallback irá apagar a v2 e criar a v3
+                    // O fallback irá apagar a v4 e criar a v5
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance
