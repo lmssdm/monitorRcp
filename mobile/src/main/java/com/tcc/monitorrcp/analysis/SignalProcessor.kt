@@ -100,7 +100,7 @@ object SignalProcessor {
         val correctDepth = depths.count { it in 5.0..6.0 }
 
         var correctRecoil = 0
-        val RECOIL_MAX_DEVIATION_CM = 0.5
+        val RECOIL_MAX_DEVIATION_CM = 1.5 // Era 0.5
 
         for (i in 0 until depthPeaks.size) {
             val peakIndex = depthPeaks[i]
@@ -119,7 +119,9 @@ object SignalProcessor {
 
         var interruptionCount = 0
         var totalInterruptionTimeMs = 0L
-        val INTERRUPTION_THRESHOLD_MS = 5000L // 5 segundos
+        // --- [MUDANÇA PONTO 4] De volta para 2 segundos ---
+        val INTERRUPTION_THRESHOLD_MS = 2000L // Era 5000L
+        // --- FIM DA MUDANÇA ---
 
         for (i in 0 until depthPeaks.size - 1) {
             val timeA = commonTimestamps[depthPeaks[i]]
@@ -178,11 +180,9 @@ object SignalProcessor {
         val accY = SplineInterpolator().interpolate(accTimestamps, cleanAccData.map { it.y.toDouble() }.toDoubleArray())
         val accZ = SplineInterpolator().interpolate(accTimestamps, cleanAccData.map { it.z.toDouble() }.toDoubleArray())
 
-        // --- [CORREÇÃO AQUI] Corrigido o erro de digitação ---
         val gyrX = SplineInterpolator().interpolate(gyrTimestamps, cleanGyrData.map { it.x.toDouble() }.toDoubleArray())
         val gyrY = SplineInterpolator().interpolate(gyrTimestamps, cleanGyrData.map { it.y.toDouble() }.toDoubleArray())
         val gyrZ = SplineInterpolator().interpolate(gyrTimestamps, cleanGyrData.map { it.z.toDouble() }.toDoubleArray())
-        // --- FIM DA CORREÇÃO ---
 
         val commonTimestamps = (startTime..endTime step 10L).toList()
 

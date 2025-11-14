@@ -34,7 +34,6 @@ import java.util.Date
 import java.util.Locale
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.width
-// --- [MUDANÇA AQUI] Importações necessárias ---
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Share
@@ -45,7 +44,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-// --- FIM DA MUDANÇA ---
 import androidx.compose.ui.Alignment
 import com.tcc.monitorrcp.ui.components.PercentageBar
 import com.tcc.monitorrcp.ui.components.corCorreta
@@ -58,26 +56,21 @@ fun HistoryDetailScreen(
     onBack: () -> Unit,
     onExport: () -> Unit,
 
-    // --- [MUDANÇA AQUI] Recebe o estado e os handlers do diálogo ---
     testToEditName: TestResult?,
     onShowEditNameDialog: () -> Unit,
     onDismissEditNameDialog: () -> Unit,
     onConfirmEditName: (String) -> Unit
-    // --- FIM DA MUDANÇA ---
 ) {
-    // --- [MUDANÇA AQUI] O título agora reage ao nome customizado ---
     val title = remember(test, testNumber) {
         if (test?.name?.isNotBlank() == true) {
-            test.name // Usa o nome customizado
+            test.name
         } else if (testNumber != null) {
-            "Detalhes do Teste $testNumber" // Fallback 1
+            "Detalhes do Teste $testNumber"
         } else {
-            "Detalhes do Teste" // Fallback 2
+            "Detalhes do Teste"
         }
     }
-    // --- FIM DA MUDANÇA ---
 
-    // --- [MUDANÇA AQUI] Lógica do Diálogo de Edição ---
     if (testToEditName != null) {
         EditNameDialog(
             currentName = testToEditName.name,
@@ -85,7 +78,6 @@ fun HistoryDetailScreen(
             onConfirm = onConfirmEditName
         )
     }
-    // --- FIM DA MUDANÇA ---
 
     Scaffold(
         topBar = {
@@ -97,11 +89,9 @@ fun HistoryDetailScreen(
                     }
                 },
                 actions = {
-                    // --- [MUDANÇA AQUI] Adiciona o botão de Editar ---
                     IconButton(onClick = onShowEditNameDialog) {
                         Icon(Icons.Default.Edit, contentDescription = "Editar Nome")
                     }
-                    // --- FIM DA MUDANÇA ---
                     IconButton(onClick = onExport) {
                         Icon(Icons.Default.Share, contentDescription = "Exportar CSV")
                     }
@@ -198,10 +188,12 @@ fun HistoryDetailScreen(
                         value = "${test.correctRecoilCount} (${"%.1f".format(test.correctRecoilPercentage)}%)"
                     )
 
+                    // --- [MUDANÇA PONTO 4] Texto do label atualizado ---
                     HistoryMetricRow(
-                        label = "Total de Pausas (>5s):",
+                        label = "Total de Pausas (>2s):", // Era (>5s)
                         value = "${test.interruptionCount}"
                     )
+                    // --- FIM DA MUDANÇA ---
                     HistoryMetricRow(
                         label = "Tempo Total em Pausa:",
                         value = "%.1f s".format(test.totalInterruptionTimeMs / 1000.0)
@@ -209,10 +201,8 @@ fun HistoryDetailScreen(
                 }
             }
 
-            // Card de Diagnóstico e Dicas
             FeedbackCard(test = test)
 
-            // --- Card 2: Gráfico de Frequência ---
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -222,7 +212,6 @@ fun HistoryDetailScreen(
                 }
             }
 
-            // --- Card 3: Gráficos de Qualidade (Profundidade e Recoil) ---
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
@@ -261,39 +250,82 @@ fun HistoryDetailScreen(
 private fun FeedbackCard(test: TestResult) {
     val tips = mutableListOf<String>()
 
-    // Analisa a Frequência
-    if (test.correctFrequencyPercentage < 80.0) {
-        if (test.slowFrequencyCount > test.fastFrequencyCount) {
-            tips.add("Ritmo Lento: Tente comprimir mais rápido, seguindo o ritmo de 100-120 cpm.")
-        } else {
-            tips.add("Ritmo Rápido: O ritmo está muito acelerado. Tente diminuir ligeiramente a velocidade.")
+    var freqIsExcellent = false
+    var depthIsExcellent = false
+    var recoilIsExcellent = false
+
+    // --- [MUDANÇA PONTO 1] Lógica de feedback granular ---
+    // --- 1. Análise de Frequência ---
+    when {
+        test.correctFrequencyPercentage < 50.0 -> {
+            val tip = if (test.slowFrequencyCount > test.fastFrequencyCount) {
+                "Seu ritmo está muito lento. Tente comprimir mais rápido, seguindo o metrônomo."
+            } else {
+                "Seu ritmo está muito rápido. Tente diminuir a velocidade para o ritmo do metrônomo."
+            }
+            tips.add("❌ Frequência (Ruim): $tip")
+        }
+        test.correctFrequencyPercentage < 80.0 -> { // 50..80
+            val tip = if (test.slowFrequencyCount > test.fastFrequencyCount) {
+                "Ritmo um pouco lento. Tente acelerar um pouco mais para se manter entre 100-120 cpm."
+            } else {
+                "Ritmo um pouco rápido. Tente relaxar e diminuir ligeiramente a velocidade."
+            }
+            tips.add("⚠️ Frequência (Regular): $tip")
+        }
+        else -> { // > 80.0
+            tips.add("✅ Frequência (Excelente): Ótimo ritmo, continue assim!")
+            freqIsExcellent = true
         }
     }
 
-    // Analisa a Profundidade
-    if (test.correctDepthPercentage < 80.0) {
-        tips.add("Profundidade: Lembre-se de usar o peso do corpo para atingir 5-6 cm de profundidade.")
+    // --- 2. Análise de Profundidade ---
+    when {
+        test.correctDepthPercentage < 50.0 -> {
+            tips.add("❌ Profundidade (Ruim): As compressões estão muito rasas. Lembre-se de usar o peso do seu corpo para atingir 5-6 cm.")
+        }
+        test.correctDepthPercentage < 80.0 -> { // 50..80
+            tips.add("⚠️ Profundidade (Regular): Quase lá! Concentre-se em aplicar um pouco mais de força para atingir os 5-6 cm recomendados.")
+        }
+        else -> { // > 80.0
+            tips.add("✅ Profundidade (Excelente): Profundidade perfeita (5-6 cm).")
+            depthIsExcellent = true
+        }
     }
 
-    // Analisa o Recoil
-    if (test.correctRecoilPercentage < 80.0) {
-        tips.add("Retorno do Tórax (Recoil): É crucial aliviar totalmente o peso do peito após cada compressão.")
+    // --- 3. Análise de Recoil ---
+    when {
+        test.correctRecoilPercentage < 50.0 -> {
+            tips.add("❌ Recoil (Ruim): É crucial aliviar totalmente o peso do peito após cada compressão. Isso permite o sangue voltar ao coração.")
+        }
+        test.correctRecoilPercentage < 80.0 -> { // 50..80
+            tips.add("⚠️ Recoil (Regular): Lembre-se de deixar o tórax retornar completamente. Evite 'descansar' sobre a vítima entre as compressões.")
+        }
+        else -> { // > 80.0
+            tips.add("✅ Recoil (Excelente): O retorno do tórax está ótimo.")
+            recoilIsExcellent = true
+        }
     }
 
+    // --- 4. Análise de Interrupções (sempre aparece se houver) ---
     if (test.interruptionCount > 0) {
         val seconds = (test.totalInterruptionTimeMs / 1000.0)
-        tips.add("Interrupções: Você fez ${test.interruptionCount} pausas longas (totalizando %.1f s). Tente minimizar o tempo sem comprimir.".format(seconds))
+        // --- [MUDANÇA PONTO 4] Texto do feedback atualizado ---
+        tips.add("⚠️ Interrupções: Você fez ${test.interruptionCount} pausas longas (totalizando %.1f s). Tente minimizar o tempo sem comprimir.".format(seconds))
     }
 
-
-    // Se foi tudo bem
-    if (tips.isEmpty() && test.totalCompressions > 0) {
-        tips.add("Excelente trabalho! As suas métricas de frequência, profundidade, recoil e interrupções estão ótimas.")
-    }
-
-    if (tips.isEmpty()) {
+    // --- 5. Mensagem Final (Se tudo for perfeito) ---
+    // --- [MUDANÇA PONTO 1] A lógica aqui está corrigida ---
+    // A lista de dicas NÃO será limpa. Em vez disso, a mensagem "Excelente trabalho"
+    // SÓ aparece se TODAS as métricas forem excelentes.
+    if (freqIsExcellent && depthIsExcellent && recoilIsExcellent && test.interruptionCount == 0 && test.totalCompressions > 0) {
+        tips.clear() // Limpa as dicas individuais (Ex: "✅ Frequência...")
+        tips.add("🏆 Excelente trabalho! Suas métricas de frequência, profundidade e recoil estão ótimas. Continue assim!")
+    } else if (tips.isEmpty()) {
+        // Caso de fallback se algo der errado e nenhuma dica for adicionada
         return
     }
+    // --- FIM DA MUDANÇA ---
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -328,7 +360,6 @@ private fun FeedbackCard(test: TestResult) {
     }
 }
 
-// --- [MUDANÇA AQUI] Novo Composable para o Diálogo de Edição ---
 @Composable
 private fun EditNameDialog(
     currentName: String,
@@ -352,7 +383,7 @@ private fun EditNameDialog(
         confirmButton = {
             TextButton(
                 onClick = { onConfirm(text) },
-                enabled = text.isNotBlank() // Impede nome vazio
+                enabled = text.isNotBlank()
             ) {
                 Text("Salvar")
             }
@@ -364,4 +395,3 @@ private fun EditNameDialog(
         }
     )
 }
-// --- FIM DA MUDANÇA ---

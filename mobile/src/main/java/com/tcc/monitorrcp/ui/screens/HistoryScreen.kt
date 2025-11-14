@@ -187,43 +187,34 @@ fun HistoryScreen(
         val areFiltersActive = filterState.areFiltersActive
 
         if (history.isEmpty() && !areFiltersActive) {
-            // --- ESTADO VAZIO ---
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding) // Aplica o padding do Scaffold
+                    .padding(padding)
             ) {
-                // Adiciona a marca d'água (logo e slogan) no fundo
                 AppWatermark()
-
-                // --- [MUDANÇA AQUI] ---
-                // O texto agora fica numa Coluna no topo da tela (default)
-                // com alinhamento central horizontal.
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp), // Padding para não colar no TopAppBar
+                        .padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = "Nenhum teste realizado", // Texto alterado
-                        style = MaterialTheme.typography.titleLarge, // Fonte alterada
+                        text = "Nenhum teste realizado",
+                        style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                // --- FIM DA MUDANÇA ---
             }
         } else {
-            // --- ESTADO COM TESTES ---
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding) // Aplica o padding do Scaffold
+                    .padding(padding)
                     .verticalScroll(rememberScrollState())
-                    .padding(16.dp) // Padding interno
+                    .padding(16.dp)
             ) {
-                // Card de Resumo Geral
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
@@ -265,7 +256,14 @@ fun HistoryScreen(
                 Text("Evolução dos Testes", style = MaterialTheme.typography.headlineSmall)
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Card Gráfico 1
+                // --- [MUDANÇA PONTO 5] Label dinâmico ---
+                val xAxisLabel = if (isSortDescending) {
+                    "Testes (Mais Antigo à Esquerda)"
+                } else {
+                    "Testes (Mais Novo à Esquerda)"
+                }
+                // --- FIM DA MUDANÇA ---
+
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
@@ -279,14 +277,15 @@ fun HistoryScreen(
                         targetMax = 120.0,
                         targetColor = Color(0xFF66BB6A).copy(alpha = 0.2f),
                         yAxisLabel = "cpm",
+                        xAxisLabel = xAxisLabel, // Passa o label dinâmico
                         yAxisLabelsOverride = null,
+                        yMinLimit = null, // Sem limite mínimo para frequência
                         yMaxLimit = 140.0
                     )
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Card Gráfico 2
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
@@ -300,14 +299,18 @@ fun HistoryScreen(
                         targetMax = 6.0,
                         targetColor = Color(0xFF66BB6A).copy(alpha = 0.2f),
                         yAxisLabel = "cm",
-                        yAxisLabelsOverride = listOf(0.0, 2.0, 5.0, 6.0, 8.0, 10.0),
-                        yMaxLimit = 10.0
+                        xAxisLabel = xAxisLabel, // Passa o label dinâmico
+
+                        // --- [MUDANÇA PONTO 3] Zoom no gráfico ---
+                        yAxisLabelsOverride = listOf(3.0, 4.0, 5.0, 6.0, 7.0, 8.0),
+                        yMinLimit = 3.0, // Força o eixo a começar em 3.0
+                        yMaxLimit = 8.0  // Força o eixo a terminar em 8.0
+                        // --- FIM DA MUDANÇA ---
                     )
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Linha de Título "Testes" com novos botões
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()

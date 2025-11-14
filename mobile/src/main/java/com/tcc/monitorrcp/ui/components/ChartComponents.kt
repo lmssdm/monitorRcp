@@ -242,27 +242,34 @@ fun LineChartWithTargetRange(
     targetMax: Double,
     targetColor: Color,
     yAxisLabel: String,
+    xAxisLabel: String,
     yAxisLabelsOverride: List<Double>? = null,
-    yMaxLimit: Double? = null // [MELHORIA UI/UX] Novo parâmetro para "travar" o eixo Y
+    // --- [CORREÇÃO] Adicionado yMinLimit ---
+    yMinLimit: Double? = null,
+    yMaxLimit: Double? = null
 ) {
     val dataPoints = data.takeLast(10).reversed()
 
+    // --- [CORREÇÃO] Lógica de Min/Max e Labels revertida para a original (que funcionava) ---
     val yAxisLabels = yAxisLabelsOverride ?: listOf(targetMin, targetMax, 80.0, 140.0)
 
     val dataMin = dataPoints.minOrNull() ?: 0.0
     val dataMax = dataPoints.maxOrNull() ?: 1.0
 
-    val overallMin = floor(min(yAxisLabels.minOrNull() ?: 0.0, dataMin) / 10.0) * 10.0
+    val defaultMin = floor(min(yAxisLabels.minOrNull() ?: 0.0, dataMin) / 10.0) * 10.0
+    val defaultMax = (max(yAxisLabels.maxOrNull() ?: 0.0, dataMax) / 10.0).let { it + 1 }.toInt() * 10.0
 
-    // [MELHORIA UI/UX] Usa o yMaxLimit se for fornecido, senão calcula
-    val overallMax = yMaxLimit ?: (max(yAxisLabels.maxOrNull() ?: 0.0, dataMax) / 10.0).let { it + 1 }.toInt() * 10.0
+    // Aplica os overrides de min/max (para o zoom)
+    val overallMin = yMinLimit ?: defaultMin
+    val overallMax = yMaxLimit ?: defaultMax
+    // --- FIM DA CORREÇÃO ---
 
     val range = (overallMax - overallMin).takeIf { it > 0 } ?: 1.0
 
     val textMeasurer = rememberTextMeasurer()
     val density = LocalDensity.current
 
-    val yAxisPaddingPx = with(density) { 55.dp.toPx() } // Aumentado para dar espaço para o "cpm"
+    val yAxisPaddingPx = with(density) { 55.dp.toPx() }
     val xAxisPaddingPx = with(density) { 30.dp.toPx() }
 
     val textStyle = TextStyle(fontSize = 12.sp, color = Color.Black)
@@ -287,7 +294,6 @@ fun LineChartWithTargetRange(
             val canvasHeight = size.height - xAxisPaddingPx
 
             fun getY(value: Double): Float {
-                // [MELHORIA UI/UX] Trava o valor no limite do gráfico
                 val clampedValue = value.coerceIn(overallMin, overallMax)
                 return (canvasHeight * (1 - ((clampedValue - overallMin) / range))).toFloat()
             }
@@ -295,9 +301,6 @@ fun LineChartWithTargetRange(
             fun getX(index: Int): Float {
                 return yAxisPaddingPx + (index * (canvasWidth / (dataPoints.size - 1).coerceAtLeast(1)))
             }
-
-            // --- RÓTULO DO EIXO Y (Vertical) ---
-            // (Removido daqui pois "cpm" ou "cm" já estão nos rótulos)
 
             // 1. Desenha a Zona-Alvo (verde)
             val targetTopY = getY(targetMax)
@@ -309,14 +312,15 @@ fun LineChartWithTargetRange(
             )
 
             // 2. Desenha o Eixo Y (Rótulos e Linhas de Grelha)
+            // --- [CORREÇÃO] Lógica de Labels revertida para a original (que funcionava) ---
             val relevantLabels = yAxisLabelsOverride?.map { it.toInt() }
                 ?: (overallMin.toInt()..overallMax.toInt() step 20).toMutableList().apply {
                     addAll(listOf(targetMin.toInt(), targetMax.toInt()))
                 }
+            // --- FIM DA CORREÇÃO ---
 
             relevantLabels.distinct().sorted().forEach { value ->
                 val y = getY(value.toDouble())
-                // [MELHORIA UI/UX] Adiciona a unidade (ex: "100 cpm")
                 val labelText = "$value $yAxisLabel"
                 val textLayoutResult = textMeasurer.measure(
                     text = labelText,
@@ -357,7 +361,18 @@ fun LineChartWithTargetRange(
                 )
             }
 
-            // 4. Desenha o Eixo X
+            // 4. Desenha os pontos (círculos)
+            dataPoints.forEachIndexed { i, value ->
+                val x = getX(i)
+                val y = getY(value)
+                drawCircle(
+                    color = lineColor,
+                    radius = 8f,
+                    center = Offset(x, y)
+                )
+            }
+
+            // 5. Desenha o Eixo X
             dataPoints.forEachIndexed { i, _ ->
                 val x = getX(i)
                 val labelText = (i + 1).toString()
@@ -372,9 +387,9 @@ fun LineChartWithTargetRange(
             }
         }
 
-        // --- [MUDANÇA AQUI] Rótulo do Eixo X alterado ---
+        // 6. Rótulo do Eixo X
         Text(
-            text = "Testes(Mais Antigo à Esquerda)\"",
+            text = xAxisLabel,
             style = axisLabelStyle,
             modifier = Modifier
                 .fillMaxWidth()
@@ -382,7 +397,7 @@ fun LineChartWithTargetRange(
             textAlign = TextAlign.Center
         )
 
-        // 5. Desenha a Legenda
+        // 7. Legenda
         Spacer(modifier = Modifier.height(16.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
