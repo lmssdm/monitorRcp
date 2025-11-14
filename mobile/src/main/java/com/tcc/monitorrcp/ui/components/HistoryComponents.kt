@@ -93,13 +93,22 @@ fun HistoryItem(
                         .size(12.dp)
                         .background(qualityColor, CircleShape)
                 )
+
+                // --- [MUDANÇA AQUI] Usa o nome customizado se existir ---
+                val title = if (result.name.isNotBlank()) {
+                    result.name
+                } else {
+                    "Teste $testNumber"
+                }
+
                 Text(
-                    text = "Teste $testNumber",
+                    text = title,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(start = 8.dp)
                 )
+                // --- FIM DA MUDANÇA ---
             }
 
             HorizontalDivider()

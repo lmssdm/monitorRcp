@@ -31,6 +31,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tcc.monitorrcp.R
+// --- [MUDANÇA AQUI] Importa o novo componente ---
+import com.tcc.monitorrcp.ui.components.AppWatermark
 
 @Composable
 fun LoginScreen(onLogin: (String) -> Unit) {
@@ -86,7 +88,9 @@ fun LoginScreen(onLogin: (String) -> Unit) {
             Button(
                 onClick = { onLogin(name) },
                 enabled = name.isNotBlank(),
-                modifier = Modifier.fillMaxWidth().height(50.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828))
             ) {
@@ -96,25 +100,8 @@ fun LoginScreen(onLogin: (String) -> Unit) {
             Spacer(modifier = Modifier.weight(1f))
         }
 
-        Image(
-            painter = painterResource(id = R.drawable.logo_rcp),
-            contentDescription = null,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 16.dp, bottom = 16.dp)
-                .size(150.dp)
-                .alpha(0.3f)
-        )
-
-        Text(
-            text = "Você ajuda pessoas.\nNós ajudamos você!",
-            textAlign = TextAlign.Start,
-            fontSize = 18.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = Color.DarkGray,
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 16.dp, bottom = 32.dp)
-        )
+        // --- [MUDANÇA AQUI] Usa o novo Composable ---
+        AppWatermark()
+        // --- FIM DA MUDANÇA ---
     }
 }

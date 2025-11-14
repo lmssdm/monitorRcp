@@ -36,7 +36,7 @@ object DataRepository {
             val entity = HistoryEntity(
                 timestamp = result.timestamp,
                 medianFrequency = result.medianFrequency,
-                medianDepth = result.medianDepth,
+                medianDepth = result.medianDepth, // [REFACTOR] Renomeado
                 totalCompressions = result.totalCompressions,
                 correctFrequencyCount = result.correctFrequencyCount,
                 correctDepthCount = result.correctDepthCount,
@@ -44,10 +44,25 @@ object DataRepository {
                 fastFrequencyCount = result.fastFrequencyCount,
                 correctRecoilCount = result.correctRecoilCount,
                 durationInMillis = result.durationInMillis,
-                interruptionCount = result.interruptionCount, // [NOVA MÉTRICA]
-                totalInterruptionTimeMs = result.totalInterruptionTimeMs // [NOVA MÉTRICA]
+                interruptionCount = result.interruptionCount,
+                totalInterruptionTimeMs = result.totalInterruptionTimeMs,
+                name = result.name // Salva o nome (provavelmente vazio no início)
             )
             db.historyDao().insert(entity)
         }
     }
+
+    suspend fun deleteTestByTimestamp(timestamp: Long) {
+        if (historyDaoInitialized) {
+            db.historyDao().deleteByTimestamp(timestamp)
+        }
+    }
+
+    // --- [MUDANÇA AQUI] Adiciona a função de update ---
+    suspend fun updateTestName(timestamp: Long, newName: String) {
+        if (historyDaoInitialized) {
+            db.historyDao().updateNameByTimestamp(timestamp, newName)
+        }
+    }
+    // --- FIM DA MUDANÇA ---
 }

@@ -7,7 +7,9 @@ import androidx.room.RoomDatabase
 
 @Database(
     entities = [HistoryEntity::class],
-    version = 6, // [REFACTOR] Versão incrementada de 5 para 6
+    // --- [MUDANÇA AQUI] Incrementar a versão para 7 ---
+    version = 7, // [REFACTOR] Versão incrementada de 6 para 7
+    // --- FIM DA MUDANÇA ---
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -25,7 +27,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "rcp_database"
                 )
-                    // O fallback irá apagar a v4 e criar a v5
+                    // Lembrete: Isso vai apagar os dados antigos na atualização para a v7
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance

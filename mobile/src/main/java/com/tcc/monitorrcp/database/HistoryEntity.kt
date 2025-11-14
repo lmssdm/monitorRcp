@@ -28,11 +28,14 @@ data class HistoryEntity(
     @ColumnInfo(defaultValue = "0")
     val durationInMillis: Long = 0L,
 
-    // [NOVA MÉTRICA]
     @ColumnInfo(defaultValue = "0")
     val interruptionCount: Int = 0,
 
-    // [NOVA MÉTRICA]
     @ColumnInfo(defaultValue = "0")
-    val totalInterruptionTimeMs: Long = 0L
+    val totalInterruptionTimeMs: Long = 0L,
+
+    // --- [MUDANÇA AQUI] Adiciona a coluna para o nome customizado ---
+    @ColumnInfo(defaultValue = "")
+    val name: String = ""
+    // --- FIM DA MUDANÇA ---
 )

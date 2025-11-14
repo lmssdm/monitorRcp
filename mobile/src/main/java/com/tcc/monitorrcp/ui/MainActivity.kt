@@ -39,7 +39,6 @@ class MainActivity : ComponentActivity() {
         DataRepository.initDatabase(applicationContext)
 
         setContent {
-            // [CORREÇÃO] Nome do tema corrigido para MonitorRcpTheme
             MonitorRcpTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -58,10 +57,8 @@ class MainActivity : ComponentActivity() {
                         onBack = { viewModel.onNavigateTo(Screen.HomeScreen) },
                         onSplashScreenTimeout = { viewModel.onSplashScreenTimeout() },
 
-                        // [REATORAÇÃO] Passa o objeto de estado do filtro
                         filterState = uiState.filterState,
 
-                        // Funções de evento de filtro
                         onShowFilterSheet = { viewModel.onShowFilterSheet() },
                         onDismissFilterSheet = { viewModel.onDismissFilterSheet() },
                         onPendingQualityChanged = { viewModel.onPendingQualityFilterChanged(it) },
@@ -73,7 +70,14 @@ class MainActivity : ComponentActivity() {
                         onClearFilters = { viewModel.onClearFilters() },
                         onApplyFilters = { viewModel.onApplyFilters() },
 
-                        // Passa a função de exportar
+                        onDeleteTest = { viewModel.onDeleteTest(it) },
+
+                        // --- [MUDANÇA AQUI] Passa os novos handlers de edição ---
+                        onShowEditNameDialog = { viewModel.onShowEditNameDialog() },
+                        onDismissEditNameDialog = { viewModel.onDismissEditNameDialog() },
+                        onConfirmEditName = { newName -> viewModel.onUpdateTestName(newName) },
+                        // --- FIM DA MUDANÇA ---
+
                         onExport = {
                             if (uiState.selectedTest != null && uiState.selectedTestNumber != null) {
                                 viewModel.exportTestResult(
@@ -102,11 +106,7 @@ fun AppNavigator(
     onTestSelected: (TestResult, Int) -> Unit,
     onBackFromDetail: () -> Unit,
     onToggleSortOrder: () -> Unit,
-
-    // [REATORAÇÃO] Recebe o objeto de estado
     filterState: HistoryFilterState,
-
-    // Funções de evento
     onShowFilterSheet: () -> Unit,
     onDismissFilterSheet: () -> Unit,
     onPendingQualityChanged: (TestQuality) -> Unit,
@@ -117,6 +117,13 @@ fun AppNavigator(
     onDateRangeSelected: (Long?, Long?) -> Unit,
     onClearFilters: ()-> Unit,
     onApplyFilters: ()-> Unit,
+    onDeleteTest: (TestResult) -> Unit,
+
+    // --- [MUDANÇA AQUI] Recebe os novos handlers ---
+    onShowEditNameDialog: () -> Unit,
+    onDismissEditNameDialog: () -> Unit,
+    onConfirmEditName: (String) -> Unit,
+    // --- FIM DA MUDANÇA ---
 
     onExport: () -> Unit
 ) {
@@ -124,12 +131,10 @@ fun AppNavigator(
         Screen.SplashScreen -> SplashScreen(onTimeout = onSplashScreenTimeout)
 
         Screen.LoginScreen -> {
-            // [CORREÇÃO] Chamada corrigida para usar os parâmetros que LoginScreen realmente tem
             LoginScreen(onLogin = onLogin)
         }
 
         Screen.HomeScreen -> {
-            // [CORREÇÃO] Chamada corrigida para usar os parâmetros que HomeScreen realmente tem
             HomeScreen(
                 name = uiState.userName ?: "",
                 onStartClick = onStartClick,
@@ -140,7 +145,6 @@ fun AppNavigator(
 
         Screen.DataScreen -> {
             BackHandler { onBack() }
-            // [CORREÇÃO] Chamada corrigida para usar os parâmetros que DataScreen realmente tem
             DataScreen(
                 result = uiState.lastTestResult,
                 intermediateFeedback = uiState.intermediateFeedback,
@@ -150,15 +154,12 @@ fun AppNavigator(
 
         Screen.HistoryScreen -> {
             BackHandler { onBack() }
-            // [REATORAÇÃO] Chamada para HistoryScreen agora é muito mais limpa
             HistoryScreen(
                 history = uiState.history,
                 onBack = onBack,
                 onTestClick = { test, testNumber -> onTestSelected(test, testNumber) },
                 isSortDescending = uiState.isSortDescending,
                 onToggleSortOrder = onToggleSortOrder,
-
-                // Passa o objeto de estado e os callbacks
                 filterState = filterState,
                 onShowFilterSheet = onShowFilterSheet,
                 onDismissFilterSheet = onDismissFilterSheet,
@@ -169,7 +170,8 @@ fun AppNavigator(
                 onDismissDatePicker = onDismissDatePicker,
                 onDateRangeSelected = onDateRangeSelected,
                 onClearFilters = onClearFilters,
-                onApplyFilters = onApplyFilters
+                onApplyFilters = onApplyFilters,
+                onDeleteTest = onDeleteTest
             )
         }
 
@@ -183,8 +185,14 @@ fun AppNavigator(
             HistoryDetailScreen(
                 test = uiState.selectedTest,
                 testNumber = uiState.selectedTestNumber,
+                // --- [MUDANÇA AQUI] Passa o estado e os handlers p/ a tela ---
+                testToEditName = uiState.testToEditName,
+                onShowEditNameDialog = onShowEditNameDialog,
+                onDismissEditNameDialog = onDismissEditNameDialog,
+                onConfirmEditName = onConfirmEditName,
+                // --- FIM DA MUDANÇA ---
                 onBack = onBackFromDetail,
-                onExport = onExport // Passa o callback
+                onExport = onExport
             )
         }
     }

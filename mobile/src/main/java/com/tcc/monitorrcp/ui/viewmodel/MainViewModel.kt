@@ -31,7 +31,6 @@ import java.util.Calendar
 import kotlin.math.roundToInt
 
 
-// --- [MUDANÇA AQUI] UiState foi DRASTICAMENTE simplificado ---
 data class UiState(
     val currentScreen: Screen = Screen.SplashScreen,
     val userName: String? = null,
@@ -43,11 +42,10 @@ data class UiState(
     val selectedTest: TestResult? = null,
     val selectedTestNumber: Int? = null,
     val isSortDescending: Boolean = true,
+    val filterState: HistoryFilterState = HistoryFilterState(),
 
-    // Todos os 10 campos de filtro agora estão dentro deste objeto
-    val filterState: HistoryFilterState = HistoryFilterState()
+    val testToEditName: TestResult? = null
 )
-// --- FIM DA MUDANÇA ---
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -119,7 +117,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         correctRecoilCount = it.correctRecoilCount,
                         durationInMillis = it.durationInMillis,
                         interruptionCount = it.interruptionCount,
-                        totalInterruptionTimeMs = it.totalInterruptionTimeMs
+                        totalInterruptionTimeMs = it.totalInterruptionTimeMs,
+                        name = it.name
                     )
                 }
                 applyHistoryFilters()
@@ -227,7 +226,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         _uiState.update { it.copy(lastTestResult = result, intermediateFeedback = "Teste finalizado!") }
         viewModelScope.launch(Dispatchers.IO) {
-            dataRepository.newResultReceived(result, getApplication())
+            dataRepository.newResultReceived(result.copy(name = ""), getApplication())
         }
     }
 
@@ -262,21 +261,60 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun onDeleteTest(test: TestResult) {
+        viewModelScope.launch(Dispatchers.IO) {
+            dataRepository.deleteTestByTimestamp(test.timestamp)
+        }
+    }
+
+    fun onShowEditNameDialog() {
+        // Pega o teste que já está sendo visto na tela de detalhes
+        val test = _uiState.value.selectedTest
+        _uiState.update { it.copy(testToEditName = test) }
+    }
+
+    fun onDismissEditNameDialog() {
+        _uiState.update { it.copy(testToEditName = null) }
+    }
+
+    // --- [MUDANÇA AQUI] Função de update agora atualiza o UiState ---
+    fun onUpdateTestName(newName: String) {
+        val name = newName.trim()
+        // Pega o teste que está no diálogo
+        val test = _uiState.value.testToEditName ?: return
+
+        // 1. Manda atualizar o banco de dados em segundo plano
+        viewModelScope.launch(Dispatchers.IO) {
+            dataRepository.updateTestName(test.timestamp, name)
+        }
+
+        // 2. Cria o objeto atualizado
+        val updatedTest = test.copy(name = name)
+
+        // 3. Atualiza o UiState imediatamente
+        // Isso fecha o diálogo (testToEditName = null)
+        // E atualiza a tela de detalhes (selectedTest = updatedTest)
+        _uiState.update {
+            it.copy(
+                testToEditName = null,
+                selectedTest = updatedTest
+            )
+        }
+    }
+    // --- FIM DA MUDANÇA ---
+
     // === Lógica de Filtros Avançados ===
 
-    // --- [MUDANÇA AQUI] applyHistoryFilters agora lê do filterState ---
     private fun applyHistoryFilters() {
         _uiState.update { state ->
             val filters = state.filterState
 
-            // 1. Filtra por Qualidade
             val qualityFilteredList = when (filters.appliedQuality) {
                 TestQuality.TODOS -> fullHistoryList
                 TestQuality.BOM -> fullHistoryList.filter { it.quality == TestQuality.BOM }
                 TestQuality.REGULAR -> fullHistoryList.filter { it.quality == TestQuality.REGULAR }
             }
 
-            // 2. Filtra por Duração MÍNIMA
             val durationMinMs = filters.appliedDurationMinMs
             val durationMinFilteredList = if (durationMinMs > 0L) {
                 qualityFilteredList.filter { it.durationInMillis >= durationMinMs }
@@ -284,7 +322,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 qualityFilteredList
             }
 
-            // 3. Filtra por Duração MÁXIMA
             val durationMaxMs = filters.appliedDurationMaxMs
             val durationMaxFilteredList = if (durationMaxMs > 0L) {
                 durationMinFilteredList.filter { it.durationInMillis <= durationMaxMs }
@@ -292,7 +329,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 durationMinFilteredList
             }
 
-            // 4. Filtra por Data
             val startDate = filters.appliedStartDateMs
             val endDate = filters.appliedEndDateMs
             val dateFilteredList = if (startDate != null && endDate != null) {
@@ -302,7 +338,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 durationMaxFilteredList
             }
 
-            // 5. Aplica a ordenação
             state.copy(
                 history = if (state.isSortDescending) {
                     dateFilteredList
@@ -322,14 +357,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // --- [MUDANÇA AQUI] Funções de filtro agora atualizam o objeto filterState ---
     fun onShowFilterSheet() {
         _uiState.update {
             val filters = it.filterState
             it.copy(
                 filterState = filters.copy(
                     isFilterSheetVisible = true,
-                    // Reseta os campos pendentes para os valores aplicados
                     pendingQuality = filters.appliedQuality,
                     pendingStartDateMs = filters.appliedStartDateMs,
                     pendingEndDateMs = filters.appliedEndDateMs,
@@ -383,7 +416,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun onClearFilters() {
         _uiState.update {
             it.copy(
-                // Reseta o objeto de filtro inteiro para o padrão
                 filterState = HistoryFilterState()
             )
         }
@@ -398,32 +430,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             it.copy(
                 filterState = pendingFilters.copy(
-                    // Move os valores pendentes para os aplicados
                     appliedQuality = pendingFilters.pendingQuality,
                     appliedDurationMinMs = minMs,
                     appliedDurationMaxMs = maxMs,
                     appliedStartDateMs = pendingFilters.pendingStartDateMs,
                     appliedEndDateMs = pendingFilters.pendingEndDateMs,
-                    // Esconde a sheet
                     isFilterSheetVisible = false
                 )
             )
         }
         applyHistoryFilters()
     }
-    // --- FIM DAS MUDANÇAS DE FILTRO ---
-
 
     fun exportTestResult(context: Context, testResult: TestResult, testNumber: Int) {
         val csvContent = buildString {
             appendLine("Metrica,Valor")
-            appendLine("Teste Numero,$testNumber")
+            val testName = testResult.name.ifBlank { "Teste $testNumber" }
+            appendLine("Nome Teste,$testName")
             appendLine("Timestamp,${testResult.timestamp}")
             appendLine("Duracao (formatada),${testResult.formattedDuration}")
             appendLine("Duracao (ms),${testResult.durationInMillis}")
             appendLine("Total Compressoes,${testResult.totalCompressions}")
             appendLine("Frequencia Mediana (cpm),${testFormatado(testResult.medianFrequency, 0)}")
-            appendLine("Profundidade Mediana (cm),${testFormatado(testResult.medianDepth, 1)}") // [REFACTOR] Renomeado
+            appendLine("Profundidade Mediana (cm),${testFormatado(testResult.medianDepth, 1)}")
             appendLine("Compressoes Freq Correta,${testResult.correctFrequencyCount}")
             appendLine("Compressoes Freq Lenta,${testResult.slowFrequencyCount}")
             appendLine("Compressoes Freq Rapida,${testResult.fastFrequencyCount}")
@@ -437,7 +466,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val cacheDir = File(context.cacheDir, "exports")
             cacheDir.mkdirs()
 
-            val file = File(cacheDir, "RCP_Teste_$testNumber.csv")
+            val safeFileName = testResult.name.ifBlank { "Teste_$testNumber" }
+                .replace(Regex("[^A-Za-z0-9_]"), "_")
+            val file = File(cacheDir, "RCP_$safeFileName.csv")
+
             file.writeText(csvContent)
 
             val fileUri = FileProvider.getUriForFile(
@@ -463,7 +495,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Função auxiliar para formatar os números no CSV de forma consistente
     private fun testFormatado(value: Double, decimals: Int): String {
         return "%.${decimals}f".format(value)
     }

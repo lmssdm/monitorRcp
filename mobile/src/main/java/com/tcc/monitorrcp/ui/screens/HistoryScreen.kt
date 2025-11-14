@@ -1,7 +1,9 @@
 package com.tcc.monitorrcp.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.SwapVert
@@ -52,12 +55,18 @@ import com.tcc.monitorrcp.ui.components.HistoryItem
 import com.tcc.monitorrcp.ui.components.HistoryMetricRow
 import com.tcc.monitorrcp.ui.components.LineChartWithTargetRange
 import java.util.Locale
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DateRangePicker
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDateRangePickerState
-import com.tcc.monitorrcp.ui.viewmodel.HistoryFilterState // Importa a nova classe
+import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.runtime.LaunchedEffect
+import com.tcc.monitorrcp.ui.viewmodel.HistoryFilterState
+import com.tcc.monitorrcp.ui.components.AppWatermark
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,11 +76,7 @@ fun HistoryScreen(
     onTestClick: (TestResult, Int) -> Unit,
     isSortDescending: Boolean,
     onToggleSortOrder: () -> Unit,
-
-    // [REATORAÇÃO] Recebe o objeto de estado único
     filterState: HistoryFilterState,
-
-    // Funções de evento
     onShowFilterSheet: () -> Unit,
     onDismissFilterSheet: () -> Unit,
     onPendingQualityChanged: (TestQuality) -> Unit,
@@ -81,7 +86,8 @@ fun HistoryScreen(
     onDismissDatePicker: () -> Unit,
     onDateRangeSelected: (Long?, Long?) -> Unit,
     onClearFilters: () -> Unit,
-    onApplyFilters: () -> Unit
+    onApplyFilters: () -> Unit,
+    onDeleteTest: (TestResult) -> Unit
 ) {
     var isListExpanded by remember { mutableStateOf(true) }
     val rotationAngle by animateFloatAsState(targetValue = if (isListExpanded) 180f else 0f, label = "rotation")
@@ -89,12 +95,13 @@ fun HistoryScreen(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     val datePickerState = rememberDateRangePickerState(
-        // [REATORAÇÃO] Lê do filterState
         initialSelectedStartDateMillis = filterState.pendingStartDateMs,
         initialSelectedEndDateMillis = filterState.pendingEndDateMs
     )
 
-    // [REATORAÇÃO] Lógica do DatePicker movida para cá
+    var testToDelete by remember { mutableStateOf<TestResult?>(null) }
+    val showDeleteDialog = testToDelete != null
+
     if (filterState.isDatePickerVisible) {
         DatePickerDialog(
             onDismissRequest = onDismissDatePicker,
@@ -122,14 +129,12 @@ fun HistoryScreen(
         }
     }
 
-    // [REATORAÇÃO] Lógica do BottomSheet movida para cá
     if (filterState.isFilterSheetVisible) {
         ModalBottomSheet(
             onDismissRequest = onDismissFilterSheet,
             sheetState = sheetState
         ) {
             AdvancedFilterSheet(
-                // Passa o estado e os callbacks
                 filterState = filterState,
                 onPendingQualityChanged = onPendingQualityChanged,
                 onPendingDurationMinChanged = onPendingDurationMinChanged,
@@ -143,11 +148,31 @@ fun HistoryScreen(
         }
     }
 
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { testToDelete = null },
+            title = { Text("Excluir Teste") },
+            text = { Text("Tem certeza que deseja excluir este teste? Esta ação não pode ser desfeita.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        testToDelete?.let { onDeleteTest(it) }
+                        testToDelete = null
+                    }
+                ) {
+                    Text("Excluir")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { testToDelete = null }) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
-            // [CORREÇÃO] Lógica do TopAppBar (que você chamava de HistoryListHeader)
-            // está aqui, como era no seu arquivo original
             TopAppBar(
                 title = { Text("Histórico de Testes") },
                 navigationIcon = {
@@ -158,22 +183,46 @@ fun HistoryScreen(
             )
         }
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp)
-        ) {
-            // [REATORAÇÃO] Lê a propriedade do filterState
-            val areFiltersActive = filterState.areFiltersActive
 
-            if (history.isEmpty() && !areFiltersActive) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("Nenhum teste realizado ainda.")
+        val areFiltersActive = filterState.areFiltersActive
+
+        if (history.isEmpty() && !areFiltersActive) {
+            // --- ESTADO VAZIO ---
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding) // Aplica o padding do Scaffold
+            ) {
+                // Adiciona a marca d'água (logo e slogan) no fundo
+                AppWatermark()
+
+                // --- [MUDANÇA AQUI] ---
+                // O texto agora fica numa Coluna no topo da tela (default)
+                // com alinhamento central horizontal.
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp), // Padding para não colar no TopAppBar
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "Nenhum teste realizado", // Texto alterado
+                        style = MaterialTheme.typography.titleLarge, // Fonte alterada
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-            } else {
-
+                // --- FIM DA MUDANÇA ---
+            }
+        } else {
+            // --- ESTADO COM TESTES ---
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding) // Aplica o padding do Scaffold
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp) // Padding interno
+            ) {
                 // Card de Resumo Geral
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -216,8 +265,7 @@ fun HistoryScreen(
                 Text("Evolução dos Testes", style = MaterialTheme.typography.headlineSmall)
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // [CORREÇÃO] Lógica do Gráfico (que você chamava de EvolutionChartsCard)
-                // está aqui, como era no seu arquivo original
+                // Card Gráfico 1
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
@@ -238,13 +286,14 @@ fun HistoryScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
+                // Card Gráfico 2
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
                     elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
                 ) {
                     LineChartWithTargetRange(
-                        data = history.map { it.medianDepth }, // [REFACTOR] Renomeado
+                        data = history.map { it.medianDepth },
                         label = "Evolução da Profundidade (cm)",
                         lineColor = Color(0xFF2E7D32),
                         targetMin = 5.0,
@@ -270,24 +319,18 @@ fun HistoryScreen(
                         style = MaterialTheme.typography.headlineSmall,
                         modifier = Modifier.weight(1f)
                     )
-
-                    // Botão de Filtro
                     IconButton(onClick = onShowFilterSheet) {
                         Icon(
                             imageVector = Icons.Default.FilterList,
                             contentDescription = "Filtrar testes"
                         )
                     }
-
-                    // Botão de Ordenação
                     IconButton(onClick = onToggleSortOrder) {
                         Icon(
                             imageVector = Icons.Default.SwapVert,
                             contentDescription = if (isSortDescending) "Ordenar por Mais Antigos" else "Ordenar por Mais Recentes"
                         )
                     }
-
-                    // Botão de Expandir/Recolher
                     IconButton(onClick = { isListExpanded = !isListExpanded }) {
                         Icon(
                             imageVector = Icons.Default.KeyboardArrowDown,
@@ -304,19 +347,65 @@ fun HistoryScreen(
                         if (history.isEmpty() && areFiltersActive) {
                             Text(
                                 "Nenhum teste encontrado para este filtro.",
-                                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
                                 textAlign = TextAlign.Center,
                                 color = Color.Gray
                             )
                         } else {
                             history.forEachIndexed { index, result ->
                                 val testNumber = if (isSortDescending) history.size - index else index + 1
-                                // [CORREÇÃO] Corrigido o nome do parâmetro de 'testResult' para 'result'
-                                HistoryItem(
-                                    result = result,
-                                    testNumber = testNumber,
-                                    onClick = { onTestClick(result, testNumber) }
+
+                                val dismissState = rememberSwipeToDismissBoxState(
+                                    confirmValueChange = {
+                                        if (it == SwipeToDismissBoxValue.StartToEnd || it == SwipeToDismissBoxValue.EndToStart) {
+                                            testToDelete = result
+                                            return@rememberSwipeToDismissBoxState false
+                                        }
+                                        return@rememberSwipeToDismissBoxState false
+                                    }
                                 )
+
+                                LaunchedEffect(testToDelete) {
+                                    if (testToDelete == null && dismissState.currentValue != SwipeToDismissBoxValue.Settled) {
+                                        dismissState.reset()
+                                    }
+                                }
+
+                                SwipeToDismissBox(
+                                    state = dismissState,
+                                    modifier = Modifier.padding(vertical = 4.dp),
+                                    enableDismissFromEndToStart = true,
+                                    enableDismissFromStartToEnd = false,
+                                    backgroundContent = {
+                                        val color by animateColorAsState(
+                                            targetValue = when (dismissState.targetValue) {
+                                                SwipeToDismissBoxValue.EndToStart -> Color.Red.copy(alpha = 0.8f)
+                                                else -> Color.Transparent
+                                            }, label = "color"
+                                        )
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .background(color)
+                                                .padding(horizontal = 20.dp),
+                                            contentAlignment = Alignment.CenterEnd
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Delete,
+                                                contentDescription = "Excluir",
+                                                tint = Color.White
+                                            )
+                                        }
+                                    }
+                                ) {
+                                    HistoryItem(
+                                        result = result,
+                                        testNumber = testNumber,
+                                        onClick = { onTestClick(result, testNumber) }
+                                    )
+                                }
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                             }
                         }

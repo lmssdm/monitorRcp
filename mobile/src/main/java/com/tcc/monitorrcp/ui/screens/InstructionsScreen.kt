@@ -37,6 +37,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tcc.monitorrcp.R
+// --- [MUDANÇA AQUI] Importa o novo componente ---
+import com.tcc.monitorrcp.ui.components.AppWatermark
 import com.tcc.monitorrcp.ui.components.InstructionPage
 import com.tcc.monitorrcp.ui.components.InstructionStepData
 
@@ -133,30 +135,10 @@ fun InstructionsScreen(onBack: () -> Unit) {
                 }
             }
 
-            // [ALTERAÇÃO] Adicionado padding na parte de baixo (bottom = 60.dp)
-            // para "subir" a imagem e evitar os 50.dp dos pontos.
-            Image(
-                painter = painterResource(id = R.drawable.logo_rcp),
-                contentDescription = null,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 16.dp, bottom = 60.dp) // <-- MUDANÇA AQUI
-                    .size(120.dp)
-                    .alpha(0.3f)
-            )
-
-            // [ALTERAÇÃO] Adicionado padding na parte de baixo (bottom = 60.dp)
-            // para "subir" o texto e evitar os 50.dp dos pontos.
-            Text(
-                text = "Você ajuda pessoas.\nNós ajudamos você!",
-                textAlign = TextAlign.Start,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = Color.DarkGray,
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(start = 16.dp, bottom = 60.dp) // <-- MUDANÇA AQUI
-            )
+            // --- [MUDANÇA AQUI] Usa o novo Composable ---
+            // O BoxScope já é fornecido pelo `Box` principal
+            AppWatermark()
+            // --- FIM DA MUDANÇA ---
         }
     }
 }

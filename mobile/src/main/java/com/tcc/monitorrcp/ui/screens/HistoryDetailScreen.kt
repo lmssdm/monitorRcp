@@ -33,12 +33,19 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+// --- [MUDANÇA AQUI] Importações necessárias ---
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material3.IconToggleButton
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+// --- FIM DA MUDANÇA ---
 import androidx.compose.ui.Alignment
 import com.tcc.monitorrcp.ui.components.PercentageBar
 import com.tcc.monitorrcp.ui.components.corCorreta
@@ -49,15 +56,36 @@ fun HistoryDetailScreen(
     test: TestResult?,
     testNumber: Int?,
     onBack: () -> Unit,
-    onExport: () -> Unit
+    onExport: () -> Unit,
+
+    // --- [MUDANÇA AQUI] Recebe o estado e os handlers do diálogo ---
+    testToEditName: TestResult?,
+    onShowEditNameDialog: () -> Unit,
+    onDismissEditNameDialog: () -> Unit,
+    onConfirmEditName: (String) -> Unit
+    // --- FIM DA MUDANÇA ---
 ) {
-    val title = remember(testNumber) {
-        if (testNumber != null) {
-            "Detalhes do Teste $testNumber"
+    // --- [MUDANÇA AQUI] O título agora reage ao nome customizado ---
+    val title = remember(test, testNumber) {
+        if (test?.name?.isNotBlank() == true) {
+            test.name // Usa o nome customizado
+        } else if (testNumber != null) {
+            "Detalhes do Teste $testNumber" // Fallback 1
         } else {
-            "Detalhes do Teste"
+            "Detalhes do Teste" // Fallback 2
         }
     }
+    // --- FIM DA MUDANÇA ---
+
+    // --- [MUDANÇA AQUI] Lógica do Diálogo de Edição ---
+    if (testToEditName != null) {
+        EditNameDialog(
+            currentName = testToEditName.name,
+            onDismiss = onDismissEditNameDialog,
+            onConfirm = onConfirmEditName
+        )
+    }
+    // --- FIM DA MUDANÇA ---
 
     Scaffold(
         topBar = {
@@ -69,6 +97,11 @@ fun HistoryDetailScreen(
                     }
                 },
                 actions = {
+                    // --- [MUDANÇA AQUI] Adiciona o botão de Editar ---
+                    IconButton(onClick = onShowEditNameDialog) {
+                        Icon(Icons.Default.Edit, contentDescription = "Editar Nome")
+                    }
+                    // --- FIM DA MUDANÇA ---
                     IconButton(onClick = onExport) {
                         Icon(Icons.Default.Share, contentDescription = "Exportar CSV")
                     }
@@ -137,8 +170,8 @@ fun HistoryDetailScreen(
                         value = "%.0f cpm".format(test.medianFrequency)
                     )
                     HistoryMetricRow(
-                        label = "Profundidade Mediana:", // [REFACTOR] Renomeado
-                        value = "%.1f cm".format(test.medianDepth) // [REFACTOR] Renomeado
+                        label = "Profundidade Mediana:",
+                        value = "%.1f cm".format(test.medianDepth)
                     )
 
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
@@ -165,17 +198,14 @@ fun HistoryDetailScreen(
                         value = "${test.correctRecoilCount} (${"%.1f".format(test.correctRecoilPercentage)}%)"
                     )
 
-                    // --- [MUDANÇA AQUI] ADICIONADO AS NOVAS MÉTRICAS ---
                     HistoryMetricRow(
-                        label = "Total de Pausas (>2s):",
+                        label = "Total de Pausas (>5s):",
                         value = "${test.interruptionCount}"
                     )
                     HistoryMetricRow(
                         label = "Tempo Total em Pausa:",
-                        // Formata os milissegundos para segundos com uma casa decimal
                         value = "%.1f s".format(test.totalInterruptionTimeMs / 1000.0)
                     )
-                    // --- FIM DA MUDANÇA ---
                 }
             }
 
@@ -250,19 +280,14 @@ private fun FeedbackCard(test: TestResult) {
         tips.add("Retorno do Tórax (Recoil): É crucial aliviar totalmente o peso do peito após cada compressão.")
     }
 
-    // --- [MUDANÇA AQUI] ADICIONADO FEEDBACK DE INTERRUPÇÃO ---
-    // A regra de qualidade (em Model.kt) já marca como "Regular" se passar de 10s
-    // Aqui, damos a dica se qualquer pausa longa for detectada.
     if (test.interruptionCount > 0) {
         val seconds = (test.totalInterruptionTimeMs / 1000.0)
         tips.add("Interrupções: Você fez ${test.interruptionCount} pausas longas (totalizando %.1f s). Tente minimizar o tempo sem comprimir.".format(seconds))
     }
-    // --- FIM DA MUDANÇA ---
 
 
     // Se foi tudo bem
     if (tips.isEmpty() && test.totalCompressions > 0) {
-        // [MUDANÇA AQUI] Texto atualizado para incluir "interrupções"
         tips.add("Excelente trabalho! As suas métricas de frequência, profundidade, recoil e interrupções estão ótimas.")
     }
 
@@ -302,3 +327,41 @@ private fun FeedbackCard(test: TestResult) {
         }
     }
 }
+
+// --- [MUDANÇA AQUI] Novo Composable para o Diálogo de Edição ---
+@Composable
+private fun EditNameDialog(
+    currentName: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var text by rememberSaveable { mutableStateOf(currentName) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Editar Nome do Teste") },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                label = { Text("Nome do Teste") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(text) },
+                enabled = text.isNotBlank() // Impede nome vazio
+            ) {
+                Text("Salvar")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancelar")
+            }
+        }
+    )
+}
+// --- FIM DA MUDANÇA ---

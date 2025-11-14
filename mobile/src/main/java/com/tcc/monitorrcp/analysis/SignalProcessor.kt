@@ -54,21 +54,18 @@ object SignalProcessor {
 
         if (accData.isEmpty() || gyrData.isEmpty()) {
             Log.e(TAG, "[FINAL] Dados de Acelerómetro (size=${accData.size}) ou Giroscópio (size=${gyrData.size}) estão vazios. Análise impossível.")
-            // [NOVA MÉTRICA] Retornar com os novos campos
-            return TestResult(timestamp, 0.0, 0.0, 0, 0, 0, 0, 0, 0, 0L, 0, 0L)
+            return TestResult(timestamp, 0.0, 0.0, 0, 0, 0, 0, 0, 0, 0L, 0, 0L, name = "")
         }
         if (accData.size < 20 || gyrData.size < 20) {
             Log.w(TAG, "[FINAL] Dados insuficientes de ACC (${accData.size}) ou GYR (${gyrData.size}) para análise de profundidade.")
-            // [NOVA MÉTRICA] Retornar com os novos campos
-            return TestResult(timestamp, 0.0, 0.0, 0, 0, 0, 0, 0, 0, 0L, 0, 0L)
+            return TestResult(timestamp, 0.0, 0.0, 0, 0, 0, 0, 0, 0, 0L, 0, 0L, name = "")
         }
 
         val (commonTimestamps, interpolatedAcc, interpolatedGyr) = interpolateSensorData(accData, gyrData)
 
         if (commonTimestamps.size < 2) {
             Log.w(TAG, "[FINAL] Falha na interpolação (listas não sobrepostas).")
-            // [NOVA MÉTRICA] Retornar com os novos campos
-            return TestResult(timestamp, 0.0, 0.0, 0, 0, 0, 0, 0, 0, 0L, 0, 0L)
+            return TestResult(timestamp, 0.0, 0.0, 0, 0, 0, 0, 0, 0, 0L, 0, 0L, name = "")
         }
 
         val durationInMillis = commonTimestamps.last() - commonTimestamps.first()
@@ -87,8 +84,7 @@ object SignalProcessor {
         val total = depthPeaks.size
         if (total < 2) {
             Log.w(TAG, "[FINAL] Não foram encontrados picos de profundidade suficientes ($total).")
-            // [NOVA MÉTRICA] Retornar com os novos campos
-            return TestResult(timestamp, 0.0, 0.0, 0, 0, 0, 0, 0, 0, durationInMillis, 0, 0L)
+            return TestResult(timestamp, 0.0, 0.0, 0, 0, 0, 0, 0, 0, durationInMillis, 0, 0L, name = "")
         }
 
         val freqs = calculateIndividualFrequenciesInterp(commonTimestamps, depthPeaks)
@@ -121,11 +117,9 @@ object SignalProcessor {
             }
         }
 
-        // --- [NOVA MÉTRICA] LÓGICA DE INTERRUPÇÃO ---
         var interruptionCount = 0
         var totalInterruptionTimeMs = 0L
-        // (Definimos uma interrupção como > 2 segundos, o normal é ~0.5s)
-        val INTERRUPTION_THRESHOLD_MS = 2000
+        val INTERRUPTION_THRESHOLD_MS = 5000L // 5 segundos
 
         for (i in 0 until depthPeaks.size - 1) {
             val timeA = commonTimestamps[depthPeaks[i]]
@@ -137,7 +131,6 @@ object SignalProcessor {
                 totalInterruptionTimeMs += (deltaT - 500) // Subtrai o tempo "normal" de uma compressão
             }
         }
-        // --- FIM DA NOVA LÓGICA ---
 
         return TestResult(
             timestamp = timestamp,
@@ -150,8 +143,9 @@ object SignalProcessor {
             correctDepthCount = correctDepth,
             correctRecoilCount = correctRecoil,
             durationInMillis = durationInMillis,
-            interruptionCount = interruptionCount, // [NOVA MÉTRICA]
-            totalInterruptionTimeMs = totalInterruptionTimeMs // [NOVA MÉTRICA]
+            interruptionCount = interruptionCount,
+            totalInterruptionTimeMs = totalInterruptionTimeMs,
+            name = ""
         )
     }
 
@@ -184,9 +178,11 @@ object SignalProcessor {
         val accY = SplineInterpolator().interpolate(accTimestamps, cleanAccData.map { it.y.toDouble() }.toDoubleArray())
         val accZ = SplineInterpolator().interpolate(accTimestamps, cleanAccData.map { it.z.toDouble() }.toDoubleArray())
 
+        // --- [CORREÇÃO AQUI] Corrigido o erro de digitação ---
         val gyrX = SplineInterpolator().interpolate(gyrTimestamps, cleanGyrData.map { it.x.toDouble() }.toDoubleArray())
         val gyrY = SplineInterpolator().interpolate(gyrTimestamps, cleanGyrData.map { it.y.toDouble() }.toDoubleArray())
         val gyrZ = SplineInterpolator().interpolate(gyrTimestamps, cleanGyrData.map { it.z.toDouble() }.toDoubleArray())
+        // --- FIM DA CORREÇÃO ---
 
         val commonTimestamps = (startTime..endTime step 10L).toList()
 
