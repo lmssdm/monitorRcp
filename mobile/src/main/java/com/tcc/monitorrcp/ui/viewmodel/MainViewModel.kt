@@ -79,6 +79,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // [INÍCIO DA CORREÇÃO] - O finalDataReceiver foi modificado
     private val finalDataReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val currentScreen = _uiState.value.currentScreen
@@ -88,17 +89,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             intent?.getStringExtra(ListenerService.EXTRA_DATA)?.let { finalData ->
-                _uiState.update { it.copy(lastReceivedData = finalData) }
+
+                // 1. Atualiza a UI para "Processando" e para o áudio
+                _uiState.update { it.copy(
+                    lastReceivedData = finalData,
+                    intermediateFeedback = "Processando resultados..."
+                ) }
+                audioManager.stopAndReset()
 
                 val finalDataPoints = signalProcessor.parseData(finalData)
                 fullTestDataList.addAll(finalDataPoints)
 
-                val sortedData = fullTestDataList.sortedBy { it.timestamp }
+                // 2. Copia a lista para processar em segundo plano
+                val dataParaProcessar = ArrayList(fullTestDataList)
 
-                processAndSaveFinalData(sortedData)
+                // 3. Limpa a lista principal para o próximo teste
+                fullTestDataList.clear()
+
+                // 4. Lança o processamento pesado (incluindo a ordenação) numa thread de I/O
+                viewModelScope.launch(Dispatchers.IO) {
+                    val sortedData = dataParaProcessar.sortedBy { it.timestamp }
+                    processAndSaveFinalData(sortedData)
+                }
             }
         }
     }
+    // [FIM DA CORREÇÃO]
 
     init {
         dataRepository.initDatabase(getApplication())
@@ -214,21 +230,48 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // === Análise Final (Precisa) ===
+    // [INÍCIO DA CORREÇÃO] - Esta função agora corre em Dispatchers.IO
     private fun processAndSaveFinalData(sortedData: List<SensorDataPoint>) {
-        audioManager.stopAndReset()
+
+        // [NOVO LOG AQUI]
+        // Este é o melhor sítio. Vamos ler a lista de dados de Sensores.
+        Log.d("RCP_CALIBRACAO", "--- INICIO DO LOG DE DADOS BRUTOS (PROCESSAMENTO) ---")
+        // Imprimimos o cabeçalho CSV para facilitar
+        Log.d("RCP_CALIBRACAO", "Timestamp,Type,X,Y,Z")
+        sortedData.forEach { dataPoint ->
+            // Recriamos o formato CSV
+            val line = "${dataPoint.timestamp},${dataPoint.type},${dataPoint.x},${dataPoint.y},${dataPoint.z}"
+            Log.d("RCP_CALIBRACAO", line)
+        }
+        Log.d("RCP_CALIBRACAO", "--- FIM DO LOG DE DADOS BRUTOS (PROCESSAMENTO) ---")
+        // =======================================================
+        // O audioManager.stopAndReset() foi movido para o receiver
 
         if (sortedData.size < 40) {
-            _uiState.update { it.copy(intermediateFeedback = "Dados insuficientes para análise final.") }
+            // 1. Precisamos de voltar à Main Thread para atualizar a UI
+            viewModelScope.launch(Dispatchers.Main) {
+                _uiState.update { it.copy(intermediateFeedback = "Dados insuficientes para análise final.") }
+            }
             return
         }
 
+        // 2. [TRABALHO PESADO] Isto agora corre em segurança na thread de I/O
         val result = signalProcessor.analyzeFinalData(sortedData, System.currentTimeMillis())
 
-        _uiState.update { it.copy(lastTestResult = result, intermediateFeedback = "Teste finalizado!") }
-        viewModelScope.launch(Dispatchers.IO) {
-            dataRepository.newResultReceived(result.copy(name = ""), getApplication())
+        // 3. [DB SAVE] Isto já pode ser chamado diretamente, pois já estamos em IO
+        dataRepository.newResultReceived(result.copy(name = ""), getApplication())
+
+        // 4. Precisamos de voltar à Main Thread para atualizar a UI com o resultado
+        viewModelScope.launch(Dispatchers.Main) {
+            _uiState.update {
+                it.copy(
+                    lastTestResult = result,
+                    intermediateFeedback = "Teste finalizado!"
+                )
+            }
         }
     }
+    // [FIM DA CORREÇÃO]
 
     override fun onCleared() {
         super.onCleared()

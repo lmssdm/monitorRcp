@@ -80,7 +80,6 @@ object SignalProcessor {
 
         val depthInCm = depthSignal.map { it * 100 }
         val depthPeaks = findPeaksWithProminence(depthInCm, minPeakHeightCm.toFloat(), minPeakDist.toInt())
-
         val total = depthPeaks.size
         if (total < 2) {
             Log.w(TAG, "[FINAL] Não foram encontrados picos de profundidade suficientes ($total).")
