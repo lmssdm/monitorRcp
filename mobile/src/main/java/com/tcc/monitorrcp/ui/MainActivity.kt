@@ -28,7 +28,9 @@ import com.tcc.monitorrcp.ui.screens.LoginScreen
 import com.tcc.monitorrcp.ui.screens.SplashScreen
 import com.tcc.monitorrcp.ui.screens.HistoryDetailScreen
 import com.tcc.monitorrcp.ui.viewmodel.HistoryFilterState // Importa a nova classe
-
+import androidx.compose.material3.Text // [NOVO] Import necessário
+import androidx.compose.material3.TextButton // [NOVO] Import necessário
+import androidx.compose.material3.AlertDialog // [NOVO] Import necessário
 class MainActivity : ComponentActivity() {
 
     private val viewModel: MainViewModel by viewModels()
@@ -45,6 +47,18 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     val uiState by viewModel.uiState.collectAsState()
+                    if (uiState.errorMessage != null) {
+                        AlertDialog(
+                            onDismissRequest = { viewModel.dismissError() }, // <--- AQUI ESTÁ A CHAMADA QUE FALTAVA
+                            title = { Text("Aviso") },
+                            text = { Text(uiState.errorMessage ?: "") },
+                            confirmButton = {
+                                TextButton(onClick = { viewModel.dismissError() }) { // <--- E AQUI TAMBÉM
+                                    Text("OK")
+                                }
+                            }
+                        )
+                    }
                     AppNavigator(
                         uiState = uiState,
                         onLogin = { name -> viewModel.onLogin(name) },

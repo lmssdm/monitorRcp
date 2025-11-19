@@ -17,8 +17,8 @@ enum class Screen {
 // Enum para os filtros de qualidade
 enum class TestQuality {
     TODOS, // Todos os testes
-    BOM,   // Bom (>= 80% em tudo)
-    REGULAR // Regular (Pelo menos um < 80%)
+    BOM,   // Bom (Frequência >= 80% e sem pausas longas)
+    REGULAR // Regular (Frequência ruim ou muitas pausas)
 }
 
 // Enum para os filtros de data
@@ -43,7 +43,7 @@ data class SensorDataPoint(
 data class TestResult(
     val timestamp: Long,
     val medianFrequency: Double,
-    val medianDepth: Double, // [REFACTOR] Renomeado de averageDepth
+    val medianDepth: Double,
     val totalCompressions: Int,
 
     val correctFrequencyCount: Int,
@@ -59,9 +59,7 @@ data class TestResult(
     val interruptionCount: Int,
     val totalInterruptionTimeMs: Long,
 
-    // --- [MUDANÇA AQUI] Adiciona o nome customizado ---
     val name: String
-    // --- FIM DA MUDANÇA ---
 ) {
     // Propriedade computada para a contagem de frequência errada
     val wrongFrequencyCount: Int
@@ -99,19 +97,21 @@ data class TestResult(
             return String.format("%02d:%02d", minutes, seconds)
         }
 
-    // Propriedade que classifica o teste
+    // [CORREÇÃO] Classificação baseada apenas na Frequência e Interrupções
     val quality: TestQuality
         get() {
             if (totalCompressions == 0) return TestQuality.REGULAR
-            // Define "Bom" como >= 80% de acerto em todas as métricas principais
-            val isFreqGood = correctFrequencyPercentage >= 80.0
-            val isDepthGood = correctDepthPercentage >= 80.0
-            val isRecoilGood = correctRecoilPercentage >= 80.0
 
-            // Pausas longas também tornam o teste "Regular"
+            // 1. Frequência: Deve ser >= 80% correta para ser BOM
+            val isFreqGood = correctFrequencyPercentage >= 80.0
+
+            // 2. Interrupções: Não pode ter parado por muito tempo (>10s)
+            // Mantive 10000ms (10s) por ser o padrão, mas se quiser usar seus 3000ms, altere aqui.
             val hasLongInterruptions = totalInterruptionTimeMs > 10000
 
-            return if (isFreqGood && isDepthGood && isRecoilGood && !hasLongInterruptions) {
+            // NOTA: Profundidade e Recoil continuam sendo calculados e mostrados no detalhe,
+            // mas não impedem mais o teste de receber o selo "BOM".
+            return if (isFreqGood && !hasLongInterruptions) {
                 TestQuality.BOM
             } else {
                 TestQuality.REGULAR

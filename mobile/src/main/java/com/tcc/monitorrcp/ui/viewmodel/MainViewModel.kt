@@ -15,7 +15,6 @@ import com.tcc.monitorrcp.audio.AudioFeedbackManager
 import com.tcc.monitorrcp.audio.FeedbackStatus
 import com.tcc.monitorrcp.ListenerService
 import com.tcc.monitorrcp.data.DataRepository
-import com.tcc.monitorrcp.model.DateFilter
 import com.tcc.monitorrcp.model.Screen
 import com.tcc.monitorrcp.model.SensorDataPoint
 import com.tcc.monitorrcp.model.TestQuality
@@ -27,9 +26,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
-import java.util.Calendar
 import kotlin.math.roundToInt
-
 
 data class UiState(
     val currentScreen: Screen = Screen.SplashScreen,
@@ -71,6 +68,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             intent?.getStringExtra(ListenerService.EXTRA_DATA)?.let { chunkData ->
                 _uiState.update { it.copy(lastReceivedData = chunkData) }
 
+                // Parse rápido para chunks pequenos é tranquilo na Main Thread
                 val dataPoints = signalProcessor.parseData(chunkData)
                 fullTestDataList.addAll(dataPoints)
 
@@ -79,7 +77,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // [INÍCIO DA CORREÇÃO] - O finalDataReceiver foi modificado
+    // [CORREÇÃO 1] Receiver otimizado para não travar a UI
     private val finalDataReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val currentScreen = _uiState.value.currentScreen
@@ -90,31 +88,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             intent?.getStringExtra(ListenerService.EXTRA_DATA)?.let { finalData ->
 
-                // 1. Atualiza a UI para "Processando" e para o áudio
+                // 1. Atualiza UI imediatamente
                 _uiState.update { it.copy(
-                    lastReceivedData = finalData,
+                    lastReceivedData = "Processando dados finais...",
                     intermediateFeedback = "Processando resultados..."
                 ) }
                 audioManager.stopAndReset()
 
-                val finalDataPoints = signalProcessor.parseData(finalData)
-                fullTestDataList.addAll(finalDataPoints)
+                // 2. Salva o que já temos acumulado dos chunks (Thread Segura)
+                val accumulatedData = ArrayList(fullTestDataList)
 
-                // 2. Copia a lista para processar em segundo plano
-                val dataParaProcessar = ArrayList(fullTestDataList)
-
-                // 3. Limpa a lista principal para o próximo teste
+                // 3. Limpa a lista principal para ficar pronta para o próximo teste
                 fullTestDataList.clear()
 
-                // 4. Lança o processamento pesado (incluindo a ordenação) numa thread de I/O
+                // 4. Joga o processamento pesado (parse da String gigante + math) para Background (IO)
                 viewModelScope.launch(Dispatchers.IO) {
-                    val sortedData = dataParaProcessar.sortedBy { it.timestamp }
+
+                    // Parsing pesado aqui (não trava a tela)
+                    val finalDataPoints = signalProcessor.parseData(finalData)
+
+                    // Junta tudo
+                    val allData = accumulatedData + finalDataPoints
+                    val sortedData = allData.sortedBy { it.timestamp }
+
                     processAndSaveFinalData(sortedData)
                 }
             }
         }
     }
-    // [FIM DA CORREÇÃO]
 
     init {
         dataRepository.initDatabase(getApplication())
@@ -124,7 +125,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     TestResult(
                         timestamp = it.timestamp,
                         medianFrequency = it.medianFrequency,
-                        medianDepth = it.medianDepth, // [REFACTOR] Renomeado
+                        medianDepth = it.medianDepth,
                         totalCompressions = it.totalCompressions,
                         correctFrequencyCount = it.correctFrequencyCount,
                         correctDepthCount = it.correctDepthCount,
@@ -184,16 +185,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         _uiState.update { it.copy(currentScreen = screen) }
     }
+
     fun onSplashScreenTimeout() {
         if (_uiState.value.currentScreen == Screen.SplashScreen) {
             _uiState.update { it.copy(currentScreen = Screen.LoginScreen) }
         }
     }
+
     fun dismissError() {
         _uiState.update { it.copy(errorMessage = null) }
     }
 
-    // === Análise Rápida (Chunks) ===
+    // === [CORREÇÃO 2] Análise Rápida com Feedback Melhorado ===
     private fun analyzeChunkAndProvideFeedback(dataPoints: List<SensorDataPoint>) {
         val accData = dataPoints.filter { it.type == "ACC" }
         if (accData.size < 5) return
@@ -204,64 +207,55 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val freqFeedback: String
 
         when {
-            freq == 0.0 -> {
-                freqFeedback = "Calculando..."
+            // Se a frequência for muito baixa, assumimos que parou ou não começou
+            freq < 10.0 -> {
+                freqFeedback = "Inicie as compressões"
                 newStatus = FeedbackStatus.NONE
             }
             freq in 100.0..120.0 -> {
-                freqFeedback = "✅ Frequência OK"
+                freqFeedback = "✅ Ritmo Correto"
                 newStatus = FeedbackStatus.OK
             }
             freq < 100 -> {
-                freqFeedback = "⚠️ Mais rápido!"
+                freqFeedback = "⚠️ Acelere o ritmo!"
                 newStatus = FeedbackStatus.SLOW
             }
-            else -> {
-                freqFeedback = "⚠️ Mais devagar!"
+            else -> { // > 120
+                freqFeedback = "⚠️ Reduza o ritmo!"
                 newStatus = FeedbackStatus.FAST
             }
         }
 
         audioManager.playFeedback(newStatus)
 
-        val msg = "$freqFeedback (${freq.roundToInt()} CPM)"
-        Log.d("RCP_DEBUG", "analyzeChunk SUCESSO. Atualizando feedback para: $msg")
+        // Exibe feedback visual
+        val displayFreq = if (freq < 10.0) "--" else freq.roundToInt().toString()
+        val msg = "$freqFeedback ($displayFreq CPM)"
+
+        Log.d("RCP_DEBUG", "analyzeChunk: $msg")
         _uiState.update { it.copy(intermediateFeedback = msg) }
     }
 
-    // === Análise Final (Precisa) ===
-    // [INÍCIO DA CORREÇÃO] - Esta função agora corre em Dispatchers.IO
+    // === Análise Final (Processamento em Background) ===
     private fun processAndSaveFinalData(sortedData: List<SensorDataPoint>) {
 
-        // [NOVO LOG AQUI]
-        // Este é o melhor sítio. Vamos ler a lista de dados de Sensores.
-        Log.d("RCP_CALIBRACAO", "--- INICIO DO LOG DE DADOS BRUTOS (PROCESSAMENTO) ---")
-        // Imprimimos o cabeçalho CSV para facilitar
-        Log.d("RCP_CALIBRACAO", "Timestamp,Type,X,Y,Z")
-        sortedData.forEach { dataPoint ->
-            // Recriamos o formato CSV
-            val line = "${dataPoint.timestamp},${dataPoint.type},${dataPoint.x},${dataPoint.y},${dataPoint.z}"
-            Log.d("RCP_CALIBRACAO", line)
-        }
-        Log.d("RCP_CALIBRACAO", "--- FIM DO LOG DE DADOS BRUTOS (PROCESSAMENTO) ---")
-        // =======================================================
-        // O audioManager.stopAndReset() foi movido para o receiver
+        // Log seguro em background
+        Log.d("RCP_CALIBRACAO", "--- PROCESSANDO ${sortedData.size} PONTOS ---")
 
         if (sortedData.size < 40) {
-            // 1. Precisamos de voltar à Main Thread para atualizar a UI
             viewModelScope.launch(Dispatchers.Main) {
                 _uiState.update { it.copy(intermediateFeedback = "Dados insuficientes para análise final.") }
             }
             return
         }
 
-        // 2. [TRABALHO PESADO] Isto agora corre em segurança na thread de I/O
+        // Cálculo matemático pesado
         val result = signalProcessor.analyzeFinalData(sortedData, System.currentTimeMillis())
 
-        // 3. [DB SAVE] Isto já pode ser chamado diretamente, pois já estamos em IO
+        // Salva no banco (Room já lida com threads se configurado, mas estamos em IO)
         dataRepository.newResultReceived(result.copy(name = ""), getApplication())
 
-        // 4. Precisamos de voltar à Main Thread para atualizar a UI com o resultado
+        // Volta para Main Thread apenas para mostrar o resultado na tela
         viewModelScope.launch(Dispatchers.Main) {
             _uiState.update {
                 it.copy(
@@ -271,7 +265,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
-    // [FIM DA CORREÇÃO]
 
     override fun onCleared() {
         super.onCleared()
@@ -311,7 +304,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun onShowEditNameDialog() {
-        // Pega o teste que já está sendo visto na tela de detalhes
         val test = _uiState.value.selectedTest
         _uiState.update { it.copy(testToEditName = test) }
     }
@@ -320,23 +312,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(testToEditName = null) }
     }
 
-    // --- [MUDANÇA AQUI] Função de update agora atualiza o UiState ---
     fun onUpdateTestName(newName: String) {
         val name = newName.trim()
-        // Pega o teste que está no diálogo
         val test = _uiState.value.testToEditName ?: return
 
-        // 1. Manda atualizar o banco de dados em segundo plano
         viewModelScope.launch(Dispatchers.IO) {
             dataRepository.updateTestName(test.timestamp, name)
         }
 
-        // 2. Cria o objeto atualizado
         val updatedTest = test.copy(name = name)
 
-        // 3. Atualiza o UiState imediatamente
-        // Isso fecha o diálogo (testToEditName = null)
-        // E atualiza a tela de detalhes (selectedTest = updatedTest)
         _uiState.update {
             it.copy(
                 testToEditName = null,
@@ -344,10 +329,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
     }
-    // --- FIM DA MUDANÇA ---
 
-    // === Lógica de Filtros Avançados ===
-
+    // === Lógica de Filtros ===
     private fun applyHistoryFilters() {
         _uiState.update { state ->
             val filters = state.filterState
@@ -485,24 +468,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         applyHistoryFilters()
     }
 
+    // === [CORREÇÃO 3] Exportação CSV com Ponto e Vírgula ===
     fun exportTestResult(context: Context, testResult: TestResult, testNumber: Int) {
         val csvContent = buildString {
-            appendLine("Metrica,Valor")
+            // Cabeçalho usando ; para compatibilidade com Excel PT-BR
+            appendLine("Metrica;Valor")
+
             val testName = testResult.name.ifBlank { "Teste $testNumber" }
-            appendLine("Nome Teste,$testName")
-            appendLine("Timestamp,${testResult.timestamp}")
-            appendLine("Duracao (formatada),${testResult.formattedDuration}")
-            appendLine("Duracao (ms),${testResult.durationInMillis}")
-            appendLine("Total Compressoes,${testResult.totalCompressions}")
-            appendLine("Frequencia Mediana (cpm),${testFormatado(testResult.medianFrequency, 0)}")
-            appendLine("Profundidade Mediana (cm),${testFormatado(testResult.medianDepth, 1)}")
-            appendLine("Compressoes Freq Correta,${testResult.correctFrequencyCount}")
-            appendLine("Compressoes Freq Lenta,${testResult.slowFrequencyCount}")
-            appendLine("Compressoes Freq Rapida,${testResult.fastFrequencyCount}")
-            appendLine("Compressoes Prof Correta,${testResult.correctDepthCount}")
-            appendLine("Compressoes Recoil Correto,${testResult.correctRecoilCount}")
-            appendLine("Total de Pausas,${testResult.interruptionCount}")
-            appendLine("Tempo Total em Pausa (s),${testFormatado(testResult.totalInterruptionTimeMs / 1000.0, 1)}")
+            appendLine("Nome Teste;$testName")
+            appendLine("Timestamp;${testResult.timestamp}")
+            appendLine("Duracao (formatada);${testResult.formattedDuration}")
+            appendLine("Duracao (ms);${testResult.durationInMillis}")
+            appendLine("Total Compressoes;${testResult.totalCompressions}")
+            appendLine("Frequencia Mediana (cpm);${testFormatado(testResult.medianFrequency, 0)}")
+            appendLine("Profundidade Mediana (cm);${testFormatado(testResult.medianDepth, 1)}")
+            appendLine("Compressoes Freq Correta;${testResult.correctFrequencyCount}")
+            appendLine("Compressoes Freq Lenta;${testResult.slowFrequencyCount}")
+            appendLine("Compressoes Freq Rapida;${testResult.fastFrequencyCount}")
+            appendLine("Compressoes Prof Correta;${testResult.correctDepthCount}")
+            appendLine("Compressoes Recoil Correto;${testResult.correctRecoilCount}")
+            appendLine("Total de Pausas;${testResult.interruptionCount}")
+            appendLine("Tempo Total em Pausa (s);${testFormatado(testResult.totalInterruptionTimeMs / 1000.0, 1)}")
         }
 
         try {

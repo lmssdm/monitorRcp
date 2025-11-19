@@ -23,7 +23,7 @@ import kotlin.math.sqrt
 data class WearUiState(
     val isCapturing: Boolean = false,
     val elapsedTimeInMillis: Long = 0L,
-    val feedbackText: String = "Aguardando compressões..."
+    val feedbackText: String = "Toque para Iniciar"
 ) {
     val timerText: String
         get() {
@@ -40,16 +40,14 @@ class WearViewModel(application: Application) : AndroidViewModel(application), S
 
     private val repository = SensorRepository(application, viewModelScope, this)
 
-    private val SEND_INTERVAL = 5000L
+    private val SEND_INTERVAL = 3000L
     private var capturedData = mutableListOf("Timestamp,Type,X,Y,Z")
     private var timerJob: Job? = null
     private var chunkSendJob: Job? = null
 
-    // --- [MUDANÇA AQUI] Job para o Metrônomo ---
+    // Metrónomo para ritmo de 110 BPM (60.000ms / 110 ≈ 545ms)
     private var metronomeJob: Job? = null
-    // Intervalo para 110 bpm (60000ms / 110 = 545ms)
     private val METRONOME_INTERVAL_MS = 545L
-    // --- FIM DA MUDANÇA ---
 
     private var lastPeakTime: Long? = null
     private var gravityMagnitude = 9.8f
@@ -60,91 +58,122 @@ class WearViewModel(application: Application) : AndroidViewModel(application), S
     private var lastValidCompressionTime = 0L
     private var waitingForRecoil = false
 
-    private val IMPACT_THRESHOLD = 3.0f
+    // Limites ajustados: 6.0f ignora a vibração do relógio
+    private val IMPACT_THRESHOLD = 6.0f
     private val RECOIL_THRESHOLD = 0.5f
     private val MIN_COMPRESSION_INTERVAL = 300L
 
     fun startCapture() {
+        // Cancela jobs anteriores para evitar sobreposição
         timerJob?.cancel()
         chunkSendJob?.cancel()
-        // --- [MUDANÇA AQUI] Cancela o metrônomo anterior ---
         metronomeJob?.cancel()
-        // --- FIM DA MUDANÇA ---
 
-        capturedData.clear()
-        capturedData.add("Timestamp,Type,X,Y,Z")
+        // Lança uma corrotina para gerir a contagem regressiva antes de começar
+        viewModelScope.launch {
 
-        lastPeakTime = null
-        lastValidCompressionTime = 0L
-        isFirstReading = true
-        waitingForRecoil = false
-        gravityMagnitude = 9.8f
-
-        _uiState.update { it.copy(isCapturing = true, elapsedTimeInMillis = 0L, feedbackText = "Iniciando captura...") }
-        repository.startCapture()
-
-        val startTime = System.currentTimeMillis()
-        timerJob = viewModelScope.launch {
-            while (isActive) {
-                val currentElapsedTime = System.currentTimeMillis() - startTime
-                _uiState.update { it.copy(elapsedTimeInMillis = currentElapsedTime) }
-                delay(100)
+            // --- FASE 1: CONTAGEM REGRESSIVA ---
+            val countdown = listOf("3", "2", "1")
+            for (count in countdown) {
+                _uiState.update { it.copy(feedbackText = "Prepare-se: $count...") }
+                vibrateShort() // Um "bip" tátil curto
+                delay(1000)    // Espera 1 segundo
             }
-        }
 
-        chunkSendJob = viewModelScope.launch {
-            while (isActive) {
-                delay(SEND_INTERVAL)
-                if (_uiState.value.isCapturing && capturedData.size > 1) {
-                    val dataToSend = ArrayList(capturedData)
-                    capturedData.clear()
-                    capturedData.add("Timestamp,Type,X,Y,Z")
-                    Log.d("WearViewModel", "Enviando chunk com ${dataToSend.size - 1} pontos.")
-                    repository.sendSensorDataChunk(dataToSend)
+            // --- FASE 2: INÍCIO REAL ---
+
+            // Vibração longa para indicar "VALENDO!"
+            try {
+                vibrator.vibrate(VibrationEffect.createOneShot(400, VibrationEffect.DEFAULT_AMPLITUDE))
+            } catch (e: Exception) { }
+
+            // Reseta variáveis APÓS a contagem (para garantir limpeza)
+            capturedData.clear()
+            capturedData.add("Timestamp,Type,X,Y,Z")
+            lastPeakTime = null
+            lastValidCompressionTime = 0L
+            isFirstReading = true
+            waitingForRecoil = false
+            gravityMagnitude = 9.8f
+
+            // Atualiza UI para modo captura
+            _uiState.update {
+                it.copy(
+                    isCapturing = true,
+                    elapsedTimeInMillis = 0L,
+                    feedbackText = "INICIADO!"
+                )
+            }
+
+            // Liga os sensores físicos
+            repository.startCapture()
+
+            // Inicia os Jobs (Timer, Envio de Chunks, Metrónomo)
+            val startTime = System.currentTimeMillis()
+
+            timerJob = launch {
+                while (isActive) {
+                    val currentElapsedTime = System.currentTimeMillis() - startTime
+                    _uiState.update { it.copy(elapsedTimeInMillis = currentElapsedTime) }
+                    delay(100)
                 }
             }
-        }
 
-        // --- [MUDANÇA AQUI] Inicia o metrônomo ---
-        startMetronome()
-        // --- FIM DA MUDANÇA ---
+            chunkSendJob = launch {
+                while (isActive) {
+                    delay(SEND_INTERVAL)
+                    // Só envia se tivermos dados novos (cabeçalho + pelo menos 1 ponto)
+                    if (_uiState.value.isCapturing && capturedData.size > 1) {
+                        val dataToSend = ArrayList(capturedData)
+                        capturedData.clear()
+                        capturedData.add("Timestamp,Type,X,Y,Z")
+                        Log.d("WearViewModel", "Enviando chunk com ${dataToSend.size - 1} pontos.")
+                        repository.sendSensorDataChunk(dataToSend)
+                    }
+                }
+            }
+
+            // Inicia o metrónomo (vibração de guia)
+            startMetronome()
+        }
     }
 
-    // --- [MUDANÇA AQUI] Nova função para o metrônomo ---
     private fun startMetronome() {
         metronomeJob = viewModelScope.launch {
             while (isActive) {
-                // Toca a vibração primeiro
                 vibrateShort()
-                // Espera o intervalo
                 delay(METRONOME_INTERVAL_MS)
             }
         }
     }
 
-    // --- FIM DA MUDANÇA ---
-
     fun stopAndSendData() {
         timerJob?.cancel()
         chunkSendJob?.cancel()
-        // --- [MUDANÇA AQUI] Para o metrônomo ao parar ---
         metronomeJob?.cancel()
-        // --- FIM DA MUDANÇA ---
 
         repository.stopCapture()
 
+        // Envia o último pacote de dados
         if (capturedData.size > 1) {
             val finalData = ArrayList(capturedData)
             repository.sendEndOfTestData(finalData)
         } else {
             repository.sendEndOfTestData(listOf("Timestamp,Type,X,Y,Z"))
         }
-        _uiState.value = WearUiState()
-        resetFeedback()
+
+        // Reseta UI
+        _uiState.update {
+            WearUiState(
+                isCapturing = false,
+                elapsedTimeInMillis = 0L,
+                feedbackText = "Toque para Iniciar"
+            )
+        }
     }
 
-    // [ALTERAÇÃO] Esta função foi modificada para capturar AMBOS os sensores
     override fun onSensorChanged(event: SensorEvent?) {
+        // Se a contagem regressiva ainda estiver a decorrer (isCapturing = false), ignoramos os sensores
         if (!_uiState.value.isCapturing || event == null) return
 
         val timestamp = System.currentTimeMillis()
@@ -152,15 +181,12 @@ class WearViewModel(application: Application) : AndroidViewModel(application), S
         val y = event.values[1]
         val z = event.values[2]
 
-        // Usa um 'when' para lidar com os diferentes tipos de sensor
         when (event.sensor.type) {
-
-            // Caso 1: Acelerómetro
             Sensor.TYPE_ACCELEROMETER -> {
-                // Salva os dados brutos para o telemóvel fazer a análise completa (Profundidade)
+                // Guarda dados para envio ao telemóvel
                 capturedData.add("$timestamp,ACC,$x,$y,$z")
 
-                // Calcula a Magnitude Total
+                // Análise Local para Feedback no Relógio
                 val currentMagnitude = sqrt(x*x + y*y + z*z)
 
                 if (isFirstReading) {
@@ -168,17 +194,12 @@ class WearViewModel(application: Application) : AndroidViewModel(application), S
                     isFirstReading = false
                 }
 
-                // Analisa a magnitude para o feedback LOCAL (vibração e texto no relógio)
                 val feedback = analyzeCompressionMagnitude(currentMagnitude)
                 if (feedback != null) {
                     _uiState.update { it.copy(feedbackText = feedback) }
                 }
             }
-
-            // [ALTERAÇÃO] Caso 2: Giroscópio
             Sensor.TYPE_GYROSCOPE -> {
-                // Apenas guarda os dados brutos para o telemóvel.
-                // Não é necessário para o feedback local do relógio.
                 capturedData.add("$timestamp,GYR,$x,$y,$z")
             }
         }
@@ -187,22 +208,32 @@ class WearViewModel(application: Application) : AndroidViewModel(application), S
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
     // ------------------------------------------------------------
-    // ANÁLISE LOCAL (só para feedback do relógio, não afeta o telemóvel)
+    // Lógica de Feedback Local
     // ------------------------------------------------------------
     private fun analyzeCompressionMagnitude(currentMag: Float): String? {
         val now = System.currentTimeMillis()
 
-        // 1. Filtro Passa-Alta na Magnitude
+        // Filtro Passa-Alta simples
         gravityMagnitude = alpha * gravityMagnitude + (1 - alpha) * currentMag
         val linearMagnitude = currentMag - gravityMagnitude
 
         if (!waitingForRecoil) {
-            // ESTADO 1: Procurando IMPACTO (pico positivo de magnitude)
+            // ESTADO 1: Descida (Compressão)
+            // IMPACT_THRESHOLD = 6.0f evita detectar a própria vibração
             if (linearMagnitude > IMPACT_THRESHOLD && (now - lastValidCompressionTime > MIN_COMPRESSION_INTERVAL)) {
+
+                // Timeout: Se passou >2s, resetamos para não dar feedback errado
+                if (now - lastValidCompressionTime > 2000) {
+                    lastValidCompressionTime = now
+                    lastPeakTime = now
+                    waitingForRecoil = true
+                    return null
+                }
+
                 waitingForRecoil = true
                 lastValidCompressionTime = now
 
-                // Feedback de Frequência
+                // Cálculo de CPM
                 val last = lastPeakTime
                 lastPeakTime = now
                 if (last != null) {
@@ -210,23 +241,20 @@ class WearViewModel(application: Application) : AndroidViewModel(application), S
                     if (interval > 0) {
                         val frequency = 60_000.0 / interval
                         return when {
-                            // --- [MUDANÇA AQUI] Removida a vibração daqui ---
-                            // O metrônomo agora controla a vibração.
-                            // Manter a vibração aqui faria o relógio vibrar duas vezes.
                             frequency < 100 -> "⚠️ Muito lento (${frequency.toInt()} cpm)"
                             frequency > 120 -> "⚠️ Muito rápido (${frequency.toInt()} cpm)"
                             else -> "✅ Ritmo OK (${frequency.toInt()} cpm)"
-                            // --- FIM DA MUDANÇA ---
                         }
                     }
                 }
             }
         } else {
-            // ESTADO 2: Aguardando RETORNO (alivio da força)
+            // ESTADO 2: Subida (Recoil)
             if (linearMagnitude < RECOIL_THRESHOLD) {
                 waitingForRecoil = false
             }
-            if (now - lastValidCompressionTime > 1500) {
+            // Timeout de segurança
+            if (now - lastValidCompressionTime > 1000) {
                 waitingForRecoil = false
             }
         }
@@ -235,12 +263,9 @@ class WearViewModel(application: Application) : AndroidViewModel(application), S
 
     private fun vibrateShort() {
         try {
-            vibrator.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE))
+            // Vibração muito curta (20ms) para não interferir no acelerómetro
+            vibrator.vibrate(VibrationEffect.createOneShot(20, VibrationEffect.DEFAULT_AMPLITUDE))
         } catch (e: Exception) { }
-    }
-
-    private fun resetFeedback() {
-        _uiState.update { it.copy(feedbackText = "Aguardando compressões...") }
     }
 
     override fun onCleared() {
