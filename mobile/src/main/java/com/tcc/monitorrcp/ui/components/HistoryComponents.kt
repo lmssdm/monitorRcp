@@ -53,6 +53,9 @@ import kotlin.math.min
 import kotlin.collections.maxOfOrNull
 import kotlin.collections.minOrNull
 
+/**
+ * O layout de cada item (card) na lista de histórico.
+ */
 @Composable
 fun HistoryItem(
     result: TestResult,
@@ -64,10 +67,10 @@ fun HistoryItem(
             .format(Date(result.timestamp))
     }
 
-    // [MELHORIA UI/UX] Define a cor do indicador de qualidade
+
     val qualityColor = when(result.quality) {
-        TestQuality.BOM -> Color(0xFF66BB6A) // Verde (Correto)
-        TestQuality.REGULAR -> Color(0xFFFFEE58) // Amarelo (Rápido/Lento)
+        TestQuality.BOM -> Color(0xFF66BB6A)
+        TestQuality.REGULAR -> Color(0xFFFFEE58)
         else -> Color.Gray
     }
 
@@ -86,7 +89,6 @@ fun HistoryItem(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // [MELHORIA UI/UX] Adiciona o indicador de cor
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
@@ -94,7 +96,6 @@ fun HistoryItem(
                         .background(qualityColor, CircleShape)
                 )
 
-                // --- [MUDANÇA AQUI] Usa o nome customizado se existir ---
                 val title = if (result.name.isNotBlank()) {
                     result.name
                 } else {
@@ -108,7 +109,7 @@ fun HistoryItem(
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(start = 8.dp)
                 )
-                // --- FIM DA MUDANÇA ---
+
             }
 
             HorizontalDivider()

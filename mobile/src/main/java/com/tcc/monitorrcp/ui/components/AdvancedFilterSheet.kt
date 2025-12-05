@@ -43,16 +43,14 @@ import java.util.TimeZone
 
 
 /**
- * Este é o conteúdo do BottomSheet (painel deslizante) que contém
- * todos os filtros avançados.
+ * O painel deslizante (Bottom Sheet) com opções avançadas de filtro.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun AdvancedFilterSheet(
-    // [REATORAÇÃO] Recebe o objeto de estado único
+
     filterState: HistoryFilterState,
 
-    // Funções de evento
     onPendingQualityChanged: (TestQuality) -> Unit,
     onPendingDurationMinChanged: (String) -> Unit,
     onPendingDurationMaxChanged: (String) -> Unit,
@@ -68,7 +66,6 @@ fun AdvancedFilterSheet(
             timeZone = TimeZone.getTimeZone("UTC")
         }
     }
-    // [REATORAÇÃO] Lê os valores pendentes do filterState
     val startDateText = filterState.pendingStartDateMs?.let { dateFormatter.format(it) } ?: "Data Início"
     val endDateText = filterState.pendingEndDateMs?.let { dateFormatter.format(it) } ?: "Data Fim"
 
@@ -79,7 +76,6 @@ fun AdvancedFilterSheet(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
 
-        // Título
         Text(
             "Filtrar Testes",
             style = MaterialTheme.typography.headlineSmall,
@@ -89,11 +85,9 @@ fun AdvancedFilterSheet(
 
         HorizontalDivider()
 
-        // 1. Filtro por Qualidade
         FilterSection(title = "Filtrar por Qualidade") {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(
-                    // [REATORAÇÃO] Lê do filterState
                     selected = filterState.pendingQuality == TestQuality.TODOS,
                     onClick = { onPendingQualityChanged(TestQuality.TODOS) },
                     label = { Text("Todos") },
@@ -114,15 +108,13 @@ fun AdvancedFilterSheet(
             }
         }
 
-        // 2. Filtro por Duração (Campos de Texto)
         FilterSection(title = "Filtrar por Duração (em segundos)") {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Campo Mínimo
+
                 OutlinedTextField(
-                    // [REATORAÇÃO] Lê do filterState
                     value = filterState.pendingDurationMinSec,
                     onValueChange = onPendingDurationMinChanged,
                     label = { Text("Mín. (seg)") },
@@ -130,9 +122,7 @@ fun AdvancedFilterSheet(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true
                 )
-                // Campo Máximo
                 OutlinedTextField(
-                    // [REATORAÇÃO] Lê do filterState
                     value = filterState.pendingDurationMaxSec,
                     onValueChange = onPendingDurationMaxChanged,
                     label = { Text("Máx. (seg)") },
@@ -143,13 +133,11 @@ fun AdvancedFilterSheet(
             }
         }
 
-        // 3. Filtro por Data
         FilterSection(title = "Filtrar por Data") {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Botão "Data Início"
                 OutlinedButton(
                     onClick = onShowDatePicker,
                     modifier = Modifier.weight(1f)
@@ -157,7 +145,6 @@ fun AdvancedFilterSheet(
                     Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
                     Text(startDateText, maxLines = 1)
                 }
-                // Botão "Data Fim"
                 OutlinedButton(
                     onClick = onShowDatePicker,
                     modifier = Modifier.weight(1f)
@@ -168,7 +155,6 @@ fun AdvancedFilterSheet(
             }
         }
 
-        // 4. Botões de Ação
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -192,7 +178,6 @@ fun AdvancedFilterSheet(
     }
 }
 
-// Componente auxiliar para o conteúdo do BottomSheet
 @Composable
 private fun FilterSection(title: String, content: @Composable () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -201,7 +186,6 @@ private fun FilterSection(title: String, content: @Composable () -> Unit) {
     }
 }
 
-// Componente auxiliar para o ícone de "check"
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CheckmarkIcon(isSelected: Boolean) {

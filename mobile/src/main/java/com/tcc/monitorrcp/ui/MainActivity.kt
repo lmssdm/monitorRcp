@@ -17,7 +17,7 @@ import com.tcc.monitorrcp.model.DateFilter
 import com.tcc.monitorrcp.model.Screen
 import com.tcc.monitorrcp.model.TestQuality
 import com.tcc.monitorrcp.model.TestResult
-import com.tcc.monitorrcp.ui.theme.MonitorRcpTheme // Corrigido o nome do Tema
+import com.tcc.monitorrcp.ui.theme.MonitorRcpTheme
 import com.tcc.monitorrcp.ui.viewmodel.MainViewModel
 import com.tcc.monitorrcp.ui.viewmodel.UiState
 import com.tcc.monitorrcp.ui.screens.DataScreen
@@ -27,12 +27,15 @@ import com.tcc.monitorrcp.ui.screens.InstructionsScreen
 import com.tcc.monitorrcp.ui.screens.LoginScreen
 import com.tcc.monitorrcp.ui.screens.SplashScreen
 import com.tcc.monitorrcp.ui.screens.HistoryDetailScreen
-import com.tcc.monitorrcp.ui.viewmodel.HistoryFilterState // Importa a nova classe
-import androidx.compose.material3.Text // [NOVO] Import necessário
-import androidx.compose.material3.TextButton // [NOVO] Import necessário
-import androidx.compose.material3.AlertDialog // [NOVO] Import necessário
-class MainActivity : ComponentActivity() {
+import com.tcc.monitorrcp.ui.viewmodel.HistoryFilterState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.AlertDialog
 
+/**
+ * A Activity do app. Configura o tema e contém o AppNavigator (decide qual tela mostrar).
+ */
+class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -49,11 +52,11 @@ class MainActivity : ComponentActivity() {
                     val uiState by viewModel.uiState.collectAsState()
                     if (uiState.errorMessage != null) {
                         AlertDialog(
-                            onDismissRequest = { viewModel.dismissError() }, // <--- AQUI ESTÁ A CHAMADA QUE FALTAVA
+                            onDismissRequest = { viewModel.dismissError() },
                             title = { Text("Aviso") },
                             text = { Text(uiState.errorMessage ?: "") },
                             confirmButton = {
-                                TextButton(onClick = { viewModel.dismissError() }) { // <--- E AQUI TAMBÉM
+                                TextButton(onClick = { viewModel.dismissError() }) {
                                     Text("OK")
                                 }
                             }
@@ -86,11 +89,9 @@ class MainActivity : ComponentActivity() {
 
                         onDeleteTest = { viewModel.onDeleteTest(it) },
 
-                        // --- [MUDANÇA AQUI] Passa os novos handlers de edição ---
                         onShowEditNameDialog = { viewModel.onShowEditNameDialog() },
                         onDismissEditNameDialog = { viewModel.onDismissEditNameDialog() },
                         onConfirmEditName = { newName -> viewModel.onUpdateTestName(newName) },
-                        // --- FIM DA MUDANÇA ---
 
                         onExport = {
                             if (uiState.selectedTest != null && uiState.selectedTestNumber != null) {
@@ -133,12 +134,9 @@ fun AppNavigator(
     onApplyFilters: ()-> Unit,
     onDeleteTest: (TestResult) -> Unit,
 
-    // --- [MUDANÇA AQUI] Recebe os novos handlers ---
     onShowEditNameDialog: () -> Unit,
     onDismissEditNameDialog: () -> Unit,
     onConfirmEditName: (String) -> Unit,
-    // --- FIM DA MUDANÇA ---
-
     onExport: () -> Unit
 ) {
     when (uiState.currentScreen) {
@@ -199,12 +197,10 @@ fun AppNavigator(
             HistoryDetailScreen(
                 test = uiState.selectedTest,
                 testNumber = uiState.selectedTestNumber,
-                // --- [MUDANÇA AQUI] Passa o estado e os handlers p/ a tela ---
                 testToEditName = uiState.testToEditName,
                 onShowEditNameDialog = onShowEditNameDialog,
                 onDismissEditNameDialog = onDismissEditNameDialog,
                 onConfirmEditName = onConfirmEditName,
-                // --- FIM DA MUDANÇA ---
                 onBack = onBackFromDetail,
                 onExport = onExport
             )

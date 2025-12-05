@@ -49,6 +49,10 @@ import com.tcc.monitorrcp.model.TestResult
 import com.tcc.monitorrcp.ui.components.QualityRow
 import com.tcc.monitorrcp.ui.components.ResultMetric
 
+/**
+ * Tela de "Teste em Andamento". Mostra o feedback em tempo real e,
+ * ao final, o resumo imediato do teste.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DataScreen(
@@ -94,8 +98,6 @@ fun DataScreen(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 if (result != null) {
-                    // --- LAYOUT DE RESULTADO FINAL ---
-
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(16.dp)
@@ -107,8 +109,8 @@ fun DataScreen(
                             modifier = Modifier.weight(1f)
                         )
                         ResultMetric(
-                            label = "Profundidade Mediana", // [REFACTOR] Renomeado
-                            value = "%.1f".format(result.medianDepth), // [REFACTOR] Renomeado
+                            label = "Profundidade Mediana",
+                            value = "%.1f".format(result.medianDepth),
                             unit = "cm",
                             modifier = Modifier.weight(1f)
                         )
@@ -138,7 +140,6 @@ fun DataScreen(
                     }
 
                 } else {
-                    // --- TESTE EM ANDAMENTO COM UI MELHORADA ---
 
                     Column(
                         modifier = Modifier.fillMaxSize(),

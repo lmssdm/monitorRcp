@@ -48,6 +48,9 @@ import androidx.compose.ui.Alignment
 import com.tcc.monitorrcp.ui.components.PercentageBar
 import com.tcc.monitorrcp.ui.components.corCorreta
 
+/**
+ * Detalhes profundos de um teste específico, com gráficos detalhados e feedback textual.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryDetailScreen(
@@ -119,8 +122,6 @@ fun HistoryDetailScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-
-            // --- Card 1: Resumo das Métricas (EXPANDIDO) ---
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -187,13 +188,10 @@ fun HistoryDetailScreen(
                         label = "Compressões (Recoil Correto):",
                         value = "${test.correctRecoilCount} (${"%.1f".format(test.correctRecoilPercentage)}%)"
                     )
-
-                    // --- [MUDANÇA PONTO 4] Texto do label atualizado ---
                     HistoryMetricRow(
                         label = "Total de Pausas (>2s):", // Era (>5s)
                         value = "${test.interruptionCount}"
                     )
-                    // --- FIM DA MUDANÇA ---
                     HistoryMetricRow(
                         label = "Tempo Total em Pausa:",
                         value = "%.1f s".format(test.totalInterruptionTimeMs / 1000.0)
@@ -242,10 +240,6 @@ fun HistoryDetailScreen(
         }
     }
 }
-
-/**
- * Um card que analisa os resultados e dá dicas de melhoria.
- */
 @Composable
 private fun FeedbackCard(test: TestResult) {
     val tips = mutableListOf<String>()
@@ -254,8 +248,6 @@ private fun FeedbackCard(test: TestResult) {
     var depthIsExcellent = false
     var recoilIsExcellent = false
 
-    // --- [MUDANÇA PONTO 1] Lógica de feedback granular ---
-    // --- 1. Análise de Frequência ---
     when {
         test.correctFrequencyPercentage < 50.0 -> {
             val tip = if (test.slowFrequencyCount > test.fastFrequencyCount) {
@@ -265,7 +257,7 @@ private fun FeedbackCard(test: TestResult) {
             }
             tips.add("❌ Frequência (Ruim): $tip")
         }
-        test.correctFrequencyPercentage < 80.0 -> { // 50..80
+        test.correctFrequencyPercentage < 80.0 -> {
             val tip = if (test.slowFrequencyCount > test.fastFrequencyCount) {
                 "Ritmo um pouco lento. Tente acelerar um pouco mais para se manter entre 100-120 cpm."
             } else {
@@ -273,59 +265,48 @@ private fun FeedbackCard(test: TestResult) {
             }
             tips.add("⚠️ Frequência (Regular): $tip")
         }
-        else -> { // > 80.0
+        else -> {
             tips.add("✅ Frequência (Excelente): Ótimo ritmo, continue assim!")
             freqIsExcellent = true
         }
     }
 
-    // --- 2. Análise de Profundidade ---
     when {
         test.correctDepthPercentage < 50.0 -> {
             tips.add("❌ Profundidade (Ruim): As compressões estão muito rasas. Lembre-se de usar o peso do seu corpo para atingir 5-6 cm.")
         }
-        test.correctDepthPercentage < 80.0 -> { // 50..80
+        test.correctDepthPercentage < 80.0 -> {
             tips.add("⚠️ Profundidade (Regular): Quase lá! Concentre-se em aplicar um pouco mais de força para atingir os 5-6 cm recomendados.")
         }
-        else -> { // > 80.0
+        else -> {
             tips.add("✅ Profundidade (Excelente): Profundidade perfeita (5-6 cm).")
             depthIsExcellent = true
         }
     }
 
-    // --- 3. Análise de Recoil ---
     when {
         test.correctRecoilPercentage < 50.0 -> {
             tips.add("❌ Recoil (Ruim): É crucial aliviar totalmente o peso do peito após cada compressão. Isso permite o sangue voltar ao coração.")
         }
-        test.correctRecoilPercentage < 80.0 -> { // 50..80
+        test.correctRecoilPercentage < 80.0 -> {
             tips.add("⚠️ Recoil (Regular): Lembre-se de deixar o tórax retornar completamente. Evite 'descansar' sobre a vítima entre as compressões.")
         }
-        else -> { // > 80.0
+        else -> {
             tips.add("✅ Recoil (Excelente): O retorno do tórax está ótimo.")
             recoilIsExcellent = true
         }
     }
 
-    // --- 4. Análise de Interrupções (sempre aparece se houver) ---
     if (test.interruptionCount > 0) {
         val seconds = (test.totalInterruptionTimeMs / 1000.0)
-        // --- [MUDANÇA PONTO 4] Texto do feedback atualizado ---
         tips.add("⚠️ Interrupções: Você fez ${test.interruptionCount} pausas longas (totalizando %.1f s). Tente minimizar o tempo sem comprimir.".format(seconds))
     }
-
-    // --- 5. Mensagem Final (Se tudo for perfeito) ---
-    // --- [MUDANÇA PONTO 1] A lógica aqui está corrigida ---
-    // A lista de dicas NÃO será limpa. Em vez disso, a mensagem "Excelente trabalho"
-    // SÓ aparece se TODAS as métricas forem excelentes.
     if (freqIsExcellent && depthIsExcellent && recoilIsExcellent && test.interruptionCount == 0 && test.totalCompressions > 0) {
-        tips.clear() // Limpa as dicas individuais (Ex: "✅ Frequência...")
+        tips.clear()
         tips.add("🏆 Excelente trabalho! Suas métricas de frequência, profundidade e recoil estão ótimas. Continue assim!")
     } else if (tips.isEmpty()) {
-        // Caso de fallback se algo der errado e nenhuma dica for adicionada
         return
     }
-    // --- FIM DA MUDANÇA ---
 
     Card(
         modifier = Modifier.fillMaxWidth(),

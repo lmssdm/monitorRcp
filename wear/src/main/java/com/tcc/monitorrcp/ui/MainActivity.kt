@@ -17,6 +17,10 @@ import com.tcc.monitorrcp.ui.screens.TimerScreen
 import com.tcc.monitorrcp.ui.viewmodel.WearViewModel
 import kotlinx.coroutines.delay
 
+/**
+ * Ponto de entrada.
+ * Verifica permissões e alterna entre Splash e Timer. Mantém a tela ligada durante a RCP.
+ */
 class MainActivity : ComponentActivity() {
 
     private val viewModel: WearViewModel by viewModels()
@@ -32,7 +36,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Solicita permissões básicas
         permissionLauncher.launch(
             arrayOf(
                 Manifest.permission.BODY_SENSORS,
@@ -46,7 +49,6 @@ class MainActivity : ComponentActivity() {
                 val uiState by viewModel.uiState.collectAsState()
                 var showSplashScreen by remember { mutableStateOf(true) }
 
-                // Mantém a tela acesa enquanto está capturando
                 LaunchedEffect(uiState.isCapturing) {
                     if (uiState.isCapturing) {
                         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -55,17 +57,14 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                // Tela de splash
                 LaunchedEffect(Unit) {
                     delay(2000)
                     showSplashScreen = false
                 }
 
                 if (showSplashScreen) {
-                    // [ALTERAÇÃO] Chama o Composable do novo arquivo
                     SplashScreen()
                 } else {
-                    // [ALTERAÇÃO] Chama o Composable do novo arquivo
                     TimerScreen(
                         timerText = uiState.timerText,
                         isCapturing = uiState.isCapturing,

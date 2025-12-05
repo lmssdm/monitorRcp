@@ -19,8 +19,7 @@ import androidx.compose.ui.unit.sp
 import com.tcc.monitorrcp.R
 
 /**
- * Adiciona a logo e o slogan do app no canto inferior da tela.
- * Este Composable deve ser usado dentro de um Box.
+ * Componentes gerais, como a marca d'água do app.
  */
 @Composable
 fun BoxScope.AppWatermark() {

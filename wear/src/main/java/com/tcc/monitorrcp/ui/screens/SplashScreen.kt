@@ -21,6 +21,9 @@ import androidx.wear.compose.material.CircularProgressIndicator
 import androidx.wear.compose.material.Text
 import com.tcc.monitorrcp.R
 
+/**
+ * Tela de carregamento simples para o relógio.
+ */
 @Composable
 fun SplashScreen() {
     Column(

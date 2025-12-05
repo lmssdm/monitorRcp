@@ -4,6 +4,9 @@ import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
+/**
+ * Define a estrutura da tabela history_table
+ */
 @Entity(tableName = "history_table")
 data class HistoryEntity(
     @PrimaryKey(autoGenerate = true)
@@ -11,7 +14,7 @@ data class HistoryEntity(
 
     val timestamp: Long,
     val medianFrequency: Double,
-    val medianDepth: Double, // [REFACTOR] Renomeado de averageDepth
+    val medianDepth: Double,
     val totalCompressions: Int,
     val correctFrequencyCount: Int,
     val correctDepthCount: Int,
@@ -34,8 +37,6 @@ data class HistoryEntity(
     @ColumnInfo(defaultValue = "0")
     val totalInterruptionTimeMs: Long = 0L,
 
-    // --- [MUDANÇA AQUI] Adiciona a coluna para o nome customizado ---
     @ColumnInfo(defaultValue = "")
     val name: String = ""
-    // --- FIM DA MUDANÇA ---
 )

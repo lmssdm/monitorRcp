@@ -20,6 +20,13 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
 import kotlin.math.sqrt
 
+/**
+ * Controla a lógica do relógio.
+ * Faz a contagem regressiva.
+ * Gera o metrônomo tátil (vibração periódica).
+ * Faz uma análise preliminar leve (algoritmo simplificado) para mostrar feedback na tela do relógio ("Muito rápido", "Ok").
+ * Gerencia o buffer de dados para envio em pacotes.
+ */
 data class WearUiState(
     val isCapturing: Boolean = false,
     val elapsedTimeInMillis: Long = 0L,
@@ -58,36 +65,27 @@ class WearViewModel(application: Application) : AndroidViewModel(application), S
     private var lastValidCompressionTime = 0L
     private var waitingForRecoil = false
 
-    // Limites ajustados: 6.0f ignora a vibração do relógio
     private val IMPACT_THRESHOLD = 6.0f
     private val RECOIL_THRESHOLD = 0.5f
     private val MIN_COMPRESSION_INTERVAL = 300L
 
     fun startCapture() {
-        // Cancela jobs anteriores para evitar sobreposição
         timerJob?.cancel()
         chunkSendJob?.cancel()
         metronomeJob?.cancel()
-
-        // Lança uma corrotina para gerir a contagem regressiva antes de começar
         viewModelScope.launch {
 
-            // --- FASE 1: CONTAGEM REGRESSIVA ---
             val countdown = listOf("3", "2", "1")
             for (count in countdown) {
                 _uiState.update { it.copy(feedbackText = "Prepare-se: $count...") }
-                vibrateShort() // Um "bip" tátil curto
-                delay(1000)    // Espera 1 segundo
+                vibrateShort()
+                delay(1000)
             }
 
-            // --- FASE 2: INÍCIO REAL ---
-
-            // Vibração longa para indicar "VALENDO!"
             try {
                 vibrator.vibrate(VibrationEffect.createOneShot(400, VibrationEffect.DEFAULT_AMPLITUDE))
             } catch (e: Exception) { }
 
-            // Reseta variáveis APÓS a contagem (para garantir limpeza)
             capturedData.clear()
             capturedData.add("Timestamp,Type,X,Y,Z")
             lastPeakTime = null
@@ -96,7 +94,6 @@ class WearViewModel(application: Application) : AndroidViewModel(application), S
             waitingForRecoil = false
             gravityMagnitude = 9.8f
 
-            // Atualiza UI para modo captura
             _uiState.update {
                 it.copy(
                     isCapturing = true,
@@ -105,10 +102,8 @@ class WearViewModel(application: Application) : AndroidViewModel(application), S
                 )
             }
 
-            // Liga os sensores físicos
             repository.startCapture()
 
-            // Inicia os Jobs (Timer, Envio de Chunks, Metrónomo)
             val startTime = System.currentTimeMillis()
 
             timerJob = launch {
@@ -122,7 +117,7 @@ class WearViewModel(application: Application) : AndroidViewModel(application), S
             chunkSendJob = launch {
                 while (isActive) {
                     delay(SEND_INTERVAL)
-                    // Só envia se tivermos dados novos (cabeçalho + pelo menos 1 ponto)
+
                     if (_uiState.value.isCapturing && capturedData.size > 1) {
                         val dataToSend = ArrayList(capturedData)
                         capturedData.clear()
@@ -133,7 +128,6 @@ class WearViewModel(application: Application) : AndroidViewModel(application), S
                 }
             }
 
-            // Inicia o metrónomo (vibração de guia)
             startMetronome()
         }
     }
@@ -154,7 +148,6 @@ class WearViewModel(application: Application) : AndroidViewModel(application), S
 
         repository.stopCapture()
 
-        // Envia o último pacote de dados
         if (capturedData.size > 1) {
             val finalData = ArrayList(capturedData)
             repository.sendEndOfTestData(finalData)
@@ -162,7 +155,6 @@ class WearViewModel(application: Application) : AndroidViewModel(application), S
             repository.sendEndOfTestData(listOf("Timestamp,Type,X,Y,Z"))
         }
 
-        // Reseta UI
         _uiState.update {
             WearUiState(
                 isCapturing = false,
@@ -173,7 +165,7 @@ class WearViewModel(application: Application) : AndroidViewModel(application), S
     }
 
     override fun onSensorChanged(event: SensorEvent?) {
-        // Se a contagem regressiva ainda estiver a decorrer (isCapturing = false), ignoramos os sensores
+
         if (!_uiState.value.isCapturing || event == null) return
 
         val timestamp = System.currentTimeMillis()
@@ -183,10 +175,9 @@ class WearViewModel(application: Application) : AndroidViewModel(application), S
 
         when (event.sensor.type) {
             Sensor.TYPE_ACCELEROMETER -> {
-                // Guarda dados para envio ao telemóvel
+
                 capturedData.add("$timestamp,ACC,$x,$y,$z")
 
-                // Análise Local para Feedback no Relógio
                 val currentMagnitude = sqrt(x*x + y*y + z*z)
 
                 if (isFirstReading) {
@@ -207,9 +198,6 @@ class WearViewModel(application: Application) : AndroidViewModel(application), S
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
-    // ------------------------------------------------------------
-    // Lógica de Feedback Local
-    // ------------------------------------------------------------
     private fun analyzeCompressionMagnitude(currentMag: Float): String? {
         val now = System.currentTimeMillis()
 
@@ -249,11 +237,9 @@ class WearViewModel(application: Application) : AndroidViewModel(application), S
                 }
             }
         } else {
-            // ESTADO 2: Subida (Recoil)
             if (linearMagnitude < RECOIL_THRESHOLD) {
                 waitingForRecoil = false
             }
-            // Timeout de segurança
             if (now - lastValidCompressionTime > 1000) {
                 waitingForRecoil = false
             }

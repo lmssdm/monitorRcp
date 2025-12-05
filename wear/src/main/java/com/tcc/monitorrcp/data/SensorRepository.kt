@@ -12,6 +12,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
+/**
+ * Gerencia o hardware do relógio.
+ * Liga/desliga o Acelerômetro e Giroscópio,
+ * envia os dados via Bluetooth (MessageClient) para o celular.
+ */
 class SensorRepository(
     private val context: Context,
     private val coroutineScope: CoroutineScope,
@@ -26,9 +31,7 @@ class SensorRepository(
     private val gyroscope: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
 
     fun startCapture() {
-        // Trocamos a frequência de captura para a mais rápida possível.
         val samplingPeriodUs = SensorManager.SENSOR_DELAY_FASTEST
-        // Regista o listener passado pelo ViewModel
         sensorManager.registerListener(listener, accelerometer, samplingPeriodUs)
         sensorManager.registerListener(listener, gyroscope, samplingPeriodUs)
         Toast.makeText(context, "Captura iniciada (alta frequência)!", Toast.LENGTH_SHORT).show()
@@ -39,15 +42,13 @@ class SensorRepository(
         Toast.makeText(context, "Captura parada.", Toast.LENGTH_SHORT).show() // Mensagem mais simples
     }
 
-    // Função interna para enviar dados com um path específico
     private fun sendDataInternal(data: List<String>, path: String) {
-        if (data.size <= 1 && path == "/sensor_data_final") { // Permite enviar msg final vazia, mas não chunks vazios
+        if (data.size <= 1 && path == "/sensor_data_final") {
             Log.w("SensorRepository", "Tentando enviar dados vazios para $path. Permitido apenas para final.")
             if (path != "/sensor_data_final") return
         }
         if (data.isEmpty() && path == "/sensor_data_final"){
             Log.w("SensorRepository", "Enviando mensagem final sem dados.")
-            // É importante enviar algo para o mobile saber que acabou
         }
 
         coroutineScope.launch {
@@ -65,7 +66,6 @@ class SensorRepository(
                 messageClient.sendMessage(nodeId, path, dataToSend).apply {
                     addOnSuccessListener {
                         Log.i("SensorRepository", "Dados ($path) enviados com sucesso!")
-                        // Removido Toast daqui para não poluir
                     }
                     addOnFailureListener {
                         Log.e("SensorRepository", "Falha ao enviar dados ($path).", it)
@@ -78,17 +78,14 @@ class SensorRepository(
             }
         }
     }
-
-    // Função para enviar chunks intermédios
     fun sendSensorDataChunk(chunk: List<String>) {
-        if (chunk.size > 1) { // Só envia se tiver dados além do header
+        if (chunk.size > 1) {
             sendDataInternal(chunk, "/sensor_data_chunk")
         } else {
             Log.d("SensorRepository", "Chunk vazio ou só com header, não enviado.")
         }
     }
 
-    // Função para enviar o último chunk e sinalizar o fim
     fun sendEndOfTestData(finalChunk: List<String>) {
         sendDataInternal(finalChunk, "/sensor_data_final")
         Toast.makeText(context, "Dados finais enviados!", Toast.LENGTH_LONG).show()

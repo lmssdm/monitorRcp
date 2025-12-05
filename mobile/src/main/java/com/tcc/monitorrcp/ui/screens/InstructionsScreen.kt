@@ -42,6 +42,9 @@ import com.tcc.monitorrcp.ui.components.AppWatermark
 import com.tcc.monitorrcp.ui.components.InstructionPage
 import com.tcc.monitorrcp.ui.components.InstructionStepData
 
+/**
+ * Um carrossel educativo ensinando como fazer RCP corretamente.
+ */
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun InstructionsScreen(onBack: () -> Unit) {
@@ -67,13 +70,11 @@ fun InstructionsScreen(onBack: () -> Unit) {
                 imageRes = R.drawable.passo4,
                 title = "Passo 4:",
                 text = "Comprima o tórax a uma profundidade de 5 a 6 centímetros."
-                // [ALTERAÇÃO] highlightText removido
             ),
             InstructionStepData(
                 imageRes = R.drawable.passo5,
                 title = "Passo 5:",
                 text = "Mantenha um ritmo de 100 a 120 compressões por minuto."
-                // [ALTERAÇÃO] highlightText removido
             ),
             InstructionStepData(
                 imageRes = R.drawable.passo6,
@@ -114,13 +115,12 @@ fun InstructionsScreen(onBack: () -> Unit) {
                     InstructionPage(step = steps[pageIndex])
                 }
 
-                // Indicadores (pontinhos)
                 Row(
                     Modifier
-                        .height(50.dp) // <-- Este Row tem 50.dp de altura
+                        .height(50.dp)
                         .fillMaxWidth(),
                     horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically // [MELHORIA UI/UX] Centraliza os pontos
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     repeat(steps.size) { iteration ->
                         val color = if (pagerState.currentPage == iteration) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
@@ -134,11 +134,7 @@ fun InstructionsScreen(onBack: () -> Unit) {
                     }
                 }
             }
-
-            // --- [MUDANÇA AQUI] Usa o novo Composable ---
-            // O BoxScope já é fornecido pelo `Box` principal
             AppWatermark()
-            // --- FIM DA MUDANÇA ---
         }
     }
 }

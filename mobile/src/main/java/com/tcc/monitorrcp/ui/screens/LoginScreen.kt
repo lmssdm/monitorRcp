@@ -34,6 +34,9 @@ import com.tcc.monitorrcp.R
 // --- [MUDANÇA AQUI] Importa o novo componente ---
 import com.tcc.monitorrcp.ui.components.AppWatermark
 
+/**
+ * Tela simples para o usuário inserir o nome.
+ */
 @Composable
 fun LoginScreen(onLogin: (String) -> Unit) {
     var name by remember { mutableStateOf("") }
@@ -78,7 +81,6 @@ fun LoginScreen(onLogin: (String) -> Unit) {
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                // placeholder = { Text("ex. Luiz Michel") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
@@ -99,9 +101,6 @@ fun LoginScreen(onLogin: (String) -> Unit) {
 
             Spacer(modifier = Modifier.weight(1f))
         }
-
-        // --- [MUDANÇA AQUI] Usa o novo Composable ---
         AppWatermark()
-        // --- FIM DA MUDANÇA ---
     }
 }

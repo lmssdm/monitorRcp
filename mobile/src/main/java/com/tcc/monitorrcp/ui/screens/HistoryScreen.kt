@@ -68,6 +68,9 @@ import androidx.compose.runtime.LaunchedEffect
 import com.tcc.monitorrcp.ui.viewmodel.HistoryFilterState
 import com.tcc.monitorrcp.ui.components.AppWatermark
 
+/**
+ * Lista todos os testes salvos, com gráficos de evolução e opções de filtro.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryScreen(
@@ -256,13 +259,11 @@ fun HistoryScreen(
                 Text("Evolução dos Testes", style = MaterialTheme.typography.headlineSmall)
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // --- [MUDANÇA PONTO 5] Label dinâmico ---
                 val xAxisLabel = if (isSortDescending) {
                     "Testes (Mais Antigo à Esquerda)"
                 } else {
                     "Testes (Mais Novo à Esquerda)"
                 }
-                // --- FIM DA MUDANÇA ---
 
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -271,15 +272,17 @@ fun HistoryScreen(
                 ) {
                     LineChartWithTargetRange(
                         data = history.map { it.medianFrequency },
-                        label = "Evolução da Frequência (cpm)",
+
+                        label = "Evolução da Frequência Mediana (cpm)",
+
                         lineColor = Color(0xFF1565C0),
                         targetMin = 100.0,
                         targetMax = 120.0,
                         targetColor = Color(0xFF66BB6A).copy(alpha = 0.2f),
                         yAxisLabel = "cpm",
-                        xAxisLabel = xAxisLabel, // Passa o label dinâmico
+                        xAxisLabel = xAxisLabel,
                         yAxisLabelsOverride = null,
-                        yMinLimit = null, // Sem limite mínimo para frequência
+                        yMinLimit = null,
                         yMaxLimit = 140.0
                     )
                 }
@@ -293,19 +296,17 @@ fun HistoryScreen(
                 ) {
                     LineChartWithTargetRange(
                         data = history.map { it.medianDepth },
-                        label = "Evolução da Profundidade (cm)",
+                        label = "Evolução da Profundidade Mediana (cm)",
+
                         lineColor = Color(0xFF2E7D32),
                         targetMin = 5.0,
                         targetMax = 6.0,
                         targetColor = Color(0xFF66BB6A).copy(alpha = 0.2f),
                         yAxisLabel = "cm",
-                        xAxisLabel = xAxisLabel, // Passa o label dinâmico
-
-                        // --- [MUDANÇA PONTO 3] Zoom no gráfico ---
+                        xAxisLabel = xAxisLabel,
                         yAxisLabelsOverride = listOf(3.0, 4.0, 5.0, 6.0, 7.0, 8.0),
-                        yMinLimit = 3.0, // Força o eixo a começar em 3.0
-                        yMaxLimit = 8.0  // Força o eixo a terminar em 8.0
-                        // --- FIM DA MUDANÇA ---
+                        yMinLimit = 3.0,
+                        yMaxLimit = 8.0
                     )
                 }
 

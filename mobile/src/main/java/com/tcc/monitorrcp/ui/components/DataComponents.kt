@@ -18,6 +18,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 
+/**
+ * Cartões para exibir métricas (ex: "105 cpm").
+ */
 @Composable
 fun QualityRow(label: String, value: String) {
     Row(

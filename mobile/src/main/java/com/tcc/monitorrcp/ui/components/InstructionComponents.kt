@@ -29,25 +29,25 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+/**
+ * Layout de cada página do tutorial de RCP.
+ */
 data class InstructionStepData(
     @DrawableRes val imageRes: Int,
     val title: String,
     val text: String
-    // [ALTERAÇÃO] highlightText foi removido daqui
 )
 
-// Composable para desenhar cada PÁGINA do carrossel
 @Composable
 fun InstructionPage(step: InstructionStepData) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp, vertical = 16.dp), // Padding ajustado
+            .padding(horizontal = 24.dp, vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
 
-        // Título "Passo X:"
         Text(
             text = step.title,
             style = MaterialTheme.typography.headlineSmall,
@@ -58,19 +58,15 @@ fun InstructionPage(step: InstructionStepData) {
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Texto de descrição
         Text(
             text = step.text,
             style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.fillMaxWidth(),
-            fontSize = 18.sp // Aumenta um pouco a fonte
+            fontSize = 18.sp
         )
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // [ALTERAÇÃO] O Card de Destaque (highlightText) foi removido daqui
-
-        // Imagem
         Image(
             painter = painterResource(id = step.imageRes),
             contentDescription = step.title,

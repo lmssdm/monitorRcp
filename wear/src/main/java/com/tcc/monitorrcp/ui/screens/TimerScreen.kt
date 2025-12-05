@@ -25,6 +25,10 @@ import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.ButtonDefaults
 import androidx.wear.compose.material.Text
 
+/**
+ * A interface principal do relógio.
+ * Mostra o cronômetro grande, o feedback de texto colorido e botões grandes de Iniciar/Parar.
+ */
 @Composable
 fun TimerScreen(
     timerText: String,

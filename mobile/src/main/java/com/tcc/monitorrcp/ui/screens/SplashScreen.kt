@@ -23,6 +23,9 @@ import androidx.compose.ui.unit.sp
 import com.tcc.monitorrcp.R
 import kotlinx.coroutines.delay
 
+/**
+ * Tela de carregamento com a logo.
+ */
 @Composable
 fun SplashScreen(onTimeout: () -> Unit) {
     LaunchedEffect(Unit) {

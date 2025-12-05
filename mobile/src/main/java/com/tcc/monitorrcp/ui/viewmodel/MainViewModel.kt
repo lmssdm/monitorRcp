@@ -28,6 +28,11 @@ import kotlinx.coroutines.launch
 import java.io.File
 import kotlin.math.roundToInt
 
+/**
+ * O gerenciador de estado da UI. Recebe dados do ListenerService,
+ * chama o SignalProcessor em background para não travar a tela,
+ * salva no banco e atualiza a interface.
+ */
 data class UiState(
     val currentScreen: Screen = Screen.SplashScreen,
     val userName: String? = null,
@@ -68,7 +73,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             intent?.getStringExtra(ListenerService.EXTRA_DATA)?.let { chunkData ->
                 _uiState.update { it.copy(lastReceivedData = chunkData) }
 
-                // Parse rápido para chunks pequenos é tranquilo na Main Thread
                 val dataPoints = signalProcessor.parseData(chunkData)
                 fullTestDataList.addAll(dataPoints)
 
@@ -77,7 +81,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // [CORREÇÃO 1] Receiver otimizado para não travar a UI
     private val finalDataReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val currentScreen = _uiState.value.currentScreen
@@ -88,26 +91,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             intent?.getStringExtra(ListenerService.EXTRA_DATA)?.let { finalData ->
 
-                // 1. Atualiza UI imediatamente
                 _uiState.update { it.copy(
                     lastReceivedData = "Processando dados finais...",
                     intermediateFeedback = "Processando resultados..."
                 ) }
                 audioManager.stopAndReset()
 
-                // 2. Salva o que já temos acumulado dos chunks (Thread Segura)
                 val accumulatedData = ArrayList(fullTestDataList)
 
-                // 3. Limpa a lista principal para ficar pronta para o próximo teste
                 fullTestDataList.clear()
 
-                // 4. Joga o processamento pesado (parse da String gigante + math) para Background (IO)
                 viewModelScope.launch(Dispatchers.IO) {
 
-                    // Parsing pesado aqui (não trava a tela)
                     val finalDataPoints = signalProcessor.parseData(finalData)
-
-                    // Junta tudo
                     val allData = accumulatedData + finalDataPoints
                     val sortedData = allData.sortedBy { it.timestamp }
 
@@ -153,8 +149,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             app.registerReceiver(finalDataReceiver, finalFilter)
         }
     }
-
-    // === Eventos de UI ===
     fun onLogin(name: String) {
         val normalizedName = name.trim().replace(Regex("\\s+"), " ").uppercase()
         if (normalizedName.length >= 3) {
@@ -196,7 +190,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(errorMessage = null) }
     }
 
-    // === [CORREÇÃO 2] Análise Rápida com Feedback Melhorado ===
     private fun analyzeChunkAndProvideFeedback(dataPoints: List<SensorDataPoint>) {
         val accData = dataPoints.filter { it.type == "ACC" }
         if (accData.size < 5) return
@@ -207,7 +200,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val freqFeedback: String
 
         when {
-            // Se a frequência for muito baixa, assumimos que parou ou não começou
             freq < 10.0 -> {
                 freqFeedback = "Inicie as compressões"
                 newStatus = FeedbackStatus.NONE
@@ -228,18 +220,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         audioManager.playFeedback(newStatus)
 
-        // Exibe feedback visual
         val displayFreq = if (freq < 10.0) "--" else freq.roundToInt().toString()
         val msg = "$freqFeedback ($displayFreq CPM)"
 
         Log.d("RCP_DEBUG", "analyzeChunk: $msg")
         _uiState.update { it.copy(intermediateFeedback = msg) }
     }
-
-    // === Análise Final (Processamento em Background) ===
     private fun processAndSaveFinalData(sortedData: List<SensorDataPoint>) {
 
-        // Log seguro em background
         Log.d("RCP_CALIBRACAO", "--- PROCESSANDO ${sortedData.size} PONTOS ---")
 
         if (sortedData.size < 40) {
@@ -249,13 +237,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
-        // Cálculo matemático pesado
         val result = signalProcessor.analyzeFinalData(sortedData, System.currentTimeMillis())
 
-        // Salva no banco (Room já lida com threads se configurado, mas estamos em IO)
         dataRepository.newResultReceived(result.copy(name = ""), getApplication())
 
-        // Volta para Main Thread apenas para mostrar o resultado na tela
         viewModelScope.launch(Dispatchers.Main) {
             _uiState.update {
                 it.copy(
@@ -275,8 +260,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         audioManager.shutdown()
     }
-
-    // === Funções de Navegação de Detalhes ===
     fun onSelectTest(test: TestResult, testNumber: Int) {
         _uiState.update {
             it.copy(
@@ -286,7 +269,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
     }
-
     fun onDeselectTest() {
         _uiState.update {
             it.copy(
@@ -329,8 +311,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
     }
-
-    // === Lógica de Filtros ===
     private fun applyHistoryFilters() {
         _uiState.update { state ->
             val filters = state.filterState
@@ -467,11 +447,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         applyHistoryFilters()
     }
-
-    // === [CORREÇÃO 3] Exportação CSV com Ponto e Vírgula ===
     fun exportTestResult(context: Context, testResult: TestResult, testNumber: Int) {
         val csvContent = buildString {
-            // Cabeçalho usando ; para compatibilidade com Excel PT-BR
             appendLine("Metrica;Valor")
 
             val testName = testResult.name.ifBlank { "Teste $testNumber" }

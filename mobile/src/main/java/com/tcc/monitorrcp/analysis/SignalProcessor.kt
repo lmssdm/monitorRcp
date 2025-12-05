@@ -16,13 +16,11 @@ import kotlin.math.sqrt
 object SignalProcessor {
 
     private const val TAG = "SignalProcessor"
-
-    // [CALIBRAÇÃO] Fator de sensibilidade (APENAS para análise final)
     private const val FINAL_ADAPTIVE_SENSITIVITY_FACTOR = 7.5
 
     /**
-     * Analisa um pequeno trecho de dados (ex: 1 ou 2 segundos) para feedback em tempo real.
-     * CORREÇÃO APLICADA: Filtro LowPass adicionado e ajustes de sensibilidade para evitar contagem dupla.
+     * O "cérebro" matemático.	Algoritmos para filtrar ruído,
+     *  remover gravidade, calcular picos, frequência e profundidade.
      */
     fun analyzeChunk(accData: List<SensorDataPoint>): Pair<Double, Double> {
         if (accData.isEmpty()) {
@@ -34,34 +32,24 @@ object SignalProcessor {
         if (duration <= 0) return 0.0 to 0.0
         val fs = accData.size / duration
 
-        // 1. Calcula magnitude bruta
         val mags = accData.map { it.magnitude() }
 
-        // 2. [CORREÇÃO] Pipeline de Filtros:
-        // Passo A: Remove gravidade/drift (High Pass > 0.5Hz) - Mantido do original
         val butterworthHigh = ButterworthFilter(cutoffFrequency = 0.5, sampleRate = fs, isHighPass = true)
         val highPassed = butterworthHigh.apply(removeMeanDrift(mags))
 
-        // Passo B: [NOVO] Remove ruído de alta frequência e vibração do 'recoil' (Low Pass < 8.0Hz)
-        // Isso "arredonda" o pico e remove o repique da soltura do peito.
         val butterworthLow = ButterworthFilter(cutoffFrequency = 8.0, sampleRate = fs, isHighPass = false)
         val filtered = butterworthLow.apply(highPassed)
 
         val filteredFloatList = filtered.map { it.toFloat() }
 
-        // 3. [AJUSTE] Aumentar o multiplicador do limiar de 2.0 para 3.0
-        // Isso faz o algoritmo ignorar picos de amplitude média (ruído) e focar só na compressão principal.
         val adaptiveThreshold = calculateAdaptiveThreshold(filteredFloatList) * 3.0
 
-        // 4. [AJUSTE] Aumentar a distância mínima entre picos (minDist)
-        // De fs * 0.35 (aprox 171 BPM) para fs * 0.40 (aprox 150 BPM).
-        // Isso evita que o algoritmo conte o rebote como uma nova compressão.
         val peaks = findPeaksWithProminence(filtered, adaptiveThreshold.toFloat(), (fs * 0.40).toInt())
 
         val freqs = calculateIndividualFrequencies(accData, peaks)
 
         val medFreq = if (freqs.isNotEmpty()) freqs.median() else 0.0
-        val avgDepth = 0.0 // Profundidade não é calculada precisamente no chunk
+        val avgDepth = 0.0
 
         return medFreq to avgDepth
     }
@@ -96,7 +84,6 @@ object SignalProcessor {
 
         val minPeakHeightCm = 1.5
 
-        // [AJUSTE MENOR] Aumentei levemente aqui também (0.3 -> 0.4) para consistência com o tempo real
         val minPeakDist = fs * 0.4
 
         val depthInCm = depthSignal.map { it * 100 }
@@ -120,7 +107,7 @@ object SignalProcessor {
         val correctDepth = depths.count { it in 5.0..6.0 }
 
         var correctRecoil = 0
-        val RECOIL_MAX_DEVIATION_CM = 1.5 // Era 0.5
+        val RECOIL_MAX_DEVIATION_CM = 1.5
 
         for (i in 0 until depthPeaks.size) {
             val peakIndex = depthPeaks[i]
@@ -139,9 +126,7 @@ object SignalProcessor {
 
         var interruptionCount = 0
         var totalInterruptionTimeMs = 0L
-        // --- [MUDANÇA PONTO 4] De volta para 2 segundos ---
-        val INTERRUPTION_THRESHOLD_MS = 2000L // Era 5000L
-        // --- FIM DA MUDANÇA ---
+        val INTERRUPTION_THRESHOLD_MS = 2000L
 
         for (i in 0 until depthPeaks.size - 1) {
             val timeA = commonTimestamps[depthPeaks[i]]
@@ -153,7 +138,6 @@ object SignalProcessor {
                 totalInterruptionTimeMs += (deltaT - 500) // Subtrai o tempo "normal" de uma compressão
             }
         }
-
         return TestResult(
             timestamp = timestamp,
             medianFrequency = medFreq,
@@ -170,8 +154,6 @@ object SignalProcessor {
             name = ""
         )
     }
-
-
     private fun interpolateSensorData(
         accData: List<SensorDataPoint>,
         gyrData: List<SensorDataPoint>
@@ -215,8 +197,6 @@ object SignalProcessor {
 
         return Triple(commonTimestamps, interpolatedAcc, interpolatedGyr)
     }
-
-
     private fun complementaryFilter(
         accData: List<FloatArray>,
         gyrData: List<FloatArray>,
@@ -251,12 +231,9 @@ object SignalProcessor {
 
             linearAcceleration.add(linAccZ.toFloat())
         }
-
         val butterworth = ButterworthFilter(cutoffFrequency = 0.5, sampleRate = fs, isHighPass = true)
         return butterworth.apply(linearAcceleration)
     }
-
-
     private fun doubleIntegrate(acceleration: List<Float>, fs: Double): List<Float> {
         val dt = 1.0 / fs
 
@@ -277,10 +254,8 @@ object SignalProcessor {
             position = alphaP * (position + velocitySignal[i] * dt)
             positionSignal[i] = -position.toFloat()
         }
-
         return positionSignal.toList()
     }
-
 
     fun parseData(csvData: String): List<SensorDataPoint> =
         csvData.split("\n").drop(1).mapNotNull {
@@ -292,8 +267,6 @@ object SignalProcessor {
                 null
             }
         }
-
-    // --- FUNÇÕES MATEMÁTICAS PRIVADAS ---
 
     private fun interpolateCubicSplineSafe(data: List<Float>, timestamps: List<Long>, upsampleFactor: Int = 2): Pair<List<Long>, List<Float>> {
         return try {
@@ -319,7 +292,6 @@ object SignalProcessor {
             timestamps to data
         }
     }
-
     private fun findPeaksWithProminence(data: List<Float>, minProm: Float, minDist: Int): List<Int> {
         val peaks = (1 until data.lastIndex).filter { data[it] > data[it - 1] && data[it] > data[it + 1] }
         val valid = mutableListOf<Int>()
@@ -336,27 +308,23 @@ object SignalProcessor {
         }
         return valid
     }
-
     private fun removeMeanDrift(data: List<Float>): List<Float> {
         if (data.isEmpty()) return data
         val mean = data.average().toFloat()
         return data.map { it - mean }
     }
-
     private fun calculateIndividualFrequencies(data: List<SensorDataPoint>, peaks: List<Int>): List<Double> {
         return peaks.zipWithNext { a, b ->
             val dt = (data[b].timestamp - data[a].timestamp) / 1000.0
             if (dt > 0.2) 60.0 / dt else null
         }.filterNotNull()
     }
-
     private fun calculateIndividualFrequenciesInterp(times: List<Long>, peaks: List<Int>): List<Double> {
         return peaks.zipWithNext { a, b ->
             val dt = (times[b] - times[a]) / 1000.0
             if (dt > 0.2) 60.0 / dt else null
         }.filterNotNull()
     }
-
     private fun calculateMedian(data: List<Float>): Float {
         if (data.isEmpty()) return 0f
         val sortedData = data.sorted()
@@ -367,19 +335,12 @@ object SignalProcessor {
             sortedData[mid]
         }
     }
-
     private fun calculateAdaptiveThreshold(data: List<Float>): Double {
         if (data.isEmpty()) return 1.0
-
         val median = calculateMedian(data)
         val deviations = data.map { abs(it - median) }
         val mad = calculateMedian(deviations)
         val robustStdDev = mad * 1.4826
-
-        // [CORREÇÃO CRÍTICA] Aumentamos o "piso" de 0.5 para 1.5.
-        // Isso impede que o algoritmo se adapte a ruídos muito baixos (como a vibração do metrónomo).
-        // Se o desvio padrão for menor que 1.5, forçamos 1.5.
-        // Multiplicado por 3.0 (no analyzeChunk), o limiar final será no mínimo 4.5.
         return robustStdDev.coerceAtLeast(1.5)
     }
 

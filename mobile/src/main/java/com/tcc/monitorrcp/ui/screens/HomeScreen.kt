@@ -28,6 +28,9 @@ import com.tcc.monitorrcp.R
 // --- [MUDANÇA AQUI] Importa o novo componente ---
 import com.tcc.monitorrcp.ui.components.AppWatermark
 
+/**
+ * Tela inicial com botões para iniciar teste, ver histórico e instruções.
+ */
 @Composable
 fun HomeScreen(
     name: String,
@@ -94,9 +97,6 @@ fun HomeScreen(
             Spacer(modifier = Modifier.weight(1f))
             Spacer(modifier = Modifier.height(32.dp))
         }
-
-        // --- [MUDANÇA AQUI] Usa o novo Composable ---
         AppWatermark()
-        // --- FIM DA MUDANÇA ---
     }
 }

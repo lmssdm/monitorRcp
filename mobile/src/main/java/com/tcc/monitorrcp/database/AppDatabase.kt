@@ -5,15 +5,16 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
+/**
+ * Configura o banco de dados SQLite local usando a biblioteca Room.
+ */
+
 @Database(
     entities = [HistoryEntity::class],
-    // --- [MUDANÇA AQUI] Incrementar a versão para 7 ---
-    version = 7, // [REFACTOR] Versão incrementada de 6 para 7
-    // --- FIM DA MUDANÇA ---
+    version = 7,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
-
     abstract fun historyDao(): HistoryDao
 
     companion object {
@@ -27,7 +28,6 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "rcp_database"
                 )
-                    // Lembrete: Isso vai apagar os dados antigos na atualização para a v7
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance
